@@ -7,6 +7,10 @@ import { LAYOUT_KEY,CAMERA_KEY,DEFAULT_HEIGHTS,ASPECT,validateHeights,openingsFo
 import { SHOTS,COMPOSITION_VERSION,proposeCompositions,compositionError,bedAxes } from './composition.mjs';
 import { RoomScene,MASKS } from './room-scene.mjs';
 const $=id=>document.getElementById(id),shotNames=SHOTS.map(s=>s.name);
+// A cached previous HTML shell can briefly receive the current bundle during publication.
+// Upgrade the small markup addition in place instead of failing the entire room.
+if(!$('composition-status')){const status=document.createElement('p');status.id='composition-status';status.className='hint';status.setAttribute('role','status');$('shot-list').before(status);}
+$('cam-fov').max='65';
 const demo={id:'demo-bed',name:'Учебная кровать',manufacturer:'Пример',sku:'DEMO-BED',category:'bed',demo:true,dimensionsMm:{width:1800,depth:2200,height:1100}};
 let room,placement,product,layout,signature,view,cameras=[],outcomes=[],active=0,heights={...DEFAULT_HEIGHTS},pass='rgb',ready=false,stale=false,drag=null,thumbnailTimer,storageOK=true,busy=false,geometryDirty=false;
 function notice(text,error=false){$('page-notice').textContent=text;$('page-notice').classList.toggle('error',error);}
