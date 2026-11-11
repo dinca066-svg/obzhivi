@@ -7,7 +7,7 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
-import { inspectGlb, compareDimensions, itemKey, validateCard, safeStem, MAX_FILE_BYTES, AXES } from './core.mjs';
+import { inspectGlb, compareDimensions, itemKey, validateCard, safeStem, safeProductUrl, MAX_FILE_BYTES, AXES } from './core.mjs';
 import { listProducts, saveProduct } from './db.mjs';
 
 const $ = id => document.getElementById(id);
@@ -24,11 +24,11 @@ function notice(text, error = false) {
 }
 function card() {
   return { name: $('name').value.trim(), manufacturer: $('manufacturer').value.trim(), sku: $('sku').value.trim(),
-    category: $('category').value, finish: $('finish').value.trim(),
+    category: $('category').value, finish: $('finish').value.trim(), productUrl: $('productUrl').value.trim(),
     dimensionsMm: Object.fromEntries(AXES.map(axis => [axis, Number($(axis).value)])) };
 }
 function setFields(value) {
-  for (const key of ['name','manufacturer','sku','category','finish']) $(key).value = value?.[key] || (key === 'category' ? 'bed' : '');
+  for (const key of ['name','manufacturer','sku','category','finish','productUrl']) $(key).value = value?.[key] || (key === 'category' ? 'bed' : '');
   for (const axis of AXES) $(axis).value = value?.dimensionsMm?.[axis] || '';
 }
 function setBusy(value) {
@@ -142,6 +142,12 @@ async function loadBuffer(buffer, name, { record = null, isDemo = false } = {}) 
   } finally { loaders?.dispose(); if (ticket === token) setBusy(false); }
 }
 function refreshCheck() {
+  const rawUrl = $('productUrl').value.trim(), url = safeProductUrl(rawUrl);
+  $('product-url-error').hidden = !rawUrl || !!url;
+  $('productUrl').setAttribute('aria-invalid', String(!!rawUrl && !url));
+  $('seller-preview').hidden = !url;
+  if (url) { $('seller-preview').href = url; $('seller-preview').textContent = `Посмотреть у продавца ↗ · ${new URL(url).hostname}`; }
+  else $('seller-preview').removeAttribute('href');
   comparison = actual ? compareDimensions(actual, card().dimensionsMm) : { status: 'no_model', rows: [], factor: null };
   const status = comparison.status;
   const chip = $('check-chip'); chip.className = 'chip';
@@ -197,11 +203,19 @@ async function refreshCatalog() {
     products = await listProducts(); $('catalog-count').textContent = products.length ? `Сохранено товаров: ${products.length}. Нажмите на карточку, чтобы открыть.` : 'В локальном каталоге пока нет товаров.';
     const grid = $('catalog-grid'); grid.replaceChildren();
     for (const product of products) {
+      const wrapper = document.createElement('article'); wrapper.className = 'product-card';
       const tile = document.createElement('button'); tile.className = 'product-tile'; tile.type = 'button'; tile.setAttribute('aria-label', `Открыть ${product.name}, ${product.sku}`);
       if (product.thumbnail) { const image = document.createElement('img'); image.src = product.thumbnail; image.alt = product.name; tile.append(image); }
       const body = document.createElement('div'); body.className = 'tile-body';
       for (const [tag,text,cls] of [['strong',product.name,''],['span',`${product.manufacturer} · ${product.sku}`,''],['span',`${product.dimensionsMm.width} × ${product.dimensionsMm.depth} × ${product.dimensionsMm.height} мм`,'tile-dimensions'],['span',product.demo?'Учебный товар · проверен':'Проверен · масштаб 1:1','']]) { const node = document.createElement(tag); node.textContent=text;node.className=cls;body.append(node); }
-      tile.append(body); tile.onclick = async () => { if (loading || saving) return; await loadBuffer(await product.sourceGlb.arrayBuffer(), product.sourceFileName, { record: product }); $('product-form').scrollIntoView({ block: 'start', behavior: 'auto' }); }; grid.append(tile);
+      tile.append(body); tile.onclick = async () => { if (loading || saving) return; await loadBuffer(await product.sourceGlb.arrayBuffer(), product.sourceFileName, { record: product }); $('product-form').scrollIntoView({ block: 'start', behavior: 'auto' }); }; wrapper.append(tile);
+      const url = safeProductUrl(product.productUrl);
+      if (url) {
+        const link = document.createElement('a'); link.className = 'seller-link'; link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.textContent = 'Посмотреть у продавца ↗'; link.setAttribute('aria-label', `Посмотреть у продавца: ${product.name}`); wrapper.append(link);
+        const domain = document.createElement('span'); domain.className = 'seller-domain'; domain.textContent = new URL(url).hostname; wrapper.append(domain);
+      }
+      grid.append(wrapper);
     }
   } catch (error) { notice('Локальное хранилище недоступно. Разрешите хранение данных для этого сайта: ' + error.message, true); }
 }

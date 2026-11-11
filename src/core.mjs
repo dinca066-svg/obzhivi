@@ -67,9 +67,17 @@ export function itemKey(manufacturer, sku) {
   return [manufacturer, sku].map(s => s.normalize('NFKC').trim().toLocaleLowerCase('ru-RU')).join('\u001f');
 }
 export function safeStem(sku) { return sku.normalize('NFKC').replace(/[^\p{L}\p{N}._-]/gu, '-').slice(0, 80) || 'furniture'; }
+export function safeProductUrl(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 4096) return null;
+  try {
+    const url = new URL(value.trim());
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
+}
 export function validateCard(card) {
   if (![card.name, card.manufacturer, card.sku].every(s => typeof s === 'string' && s.trim())) return 'Заполните название, производителя и артикул комплектации.';
   if ([card.name, card.manufacturer, card.sku, card.finish].some(s => (s?.length || 0) > 160)) return 'Поле не должно быть длиннее 160 символов.';
+  if (card.productUrl && !safeProductUrl(card.productUrl)) return 'Укажите полную ссылку на товар, начиная с https:// или http://.';
   if (!validDimensions(card.dimensionsMm)) return 'Укажите все внешние габариты от 1 до 50 000 мм.';
   return null;
 }

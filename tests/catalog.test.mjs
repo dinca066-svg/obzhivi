@@ -2,10 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Box3, Group, Vector3 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { compareDimensions, inspectGlb, itemKey, validateCard } from '../src/core.mjs';
+import { compareDimensions, inspectGlb, itemKey, validateCard, safeProductUrl } from '../src/core.mjs';
 import { makeBedGlb } from '../scripts/fixtures.mjs';
 
 const target = { width: 1800, depth: 2200, height: 1100 };
+test('seller links preserve product URLs and block executable or credential-bearing URLs', () => {
+  const url = 'https://market.yandex.ru/card/bed/5971077429?offer=white';
+  assert.equal(safeProductUrl(url), url);
+  for (const bad of ['javascript:alert(1)', 'data:text/html,hello', '/relative', 'https://user:secret@example.com', 'bad address']) assert.equal(safeProductUrl(bad), null);
+  assert.ok(validateCard({name:'Кровать',manufacturer:'Бренд',sku:'1',dimensionsMm:target,productUrl:'javascript:alert(1)'}));
+});
 const asArrayBuffer = bytes => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 function jsonGlb(document) {
   const text = Buffer.from(JSON.stringify(document));
