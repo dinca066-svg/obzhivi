@@ -10,6 +10,7 @@ test('vertical edges stay vertical and horizon stays level for every supported f
     camera.rotation.set(.3,.2,.4);camera.up.set(1,0,0);
     applyLevelCamera(camera,{x:2800,z:4400,height:1500,yaw,fov,shiftY,pitch:-14,roll:12});
     const forward=camera.getWorldDirection(new Vector3()),right=new Vector3().crossVectors(forward,camera.up).normalize();
+    assert.equal(camera.aspect,3/4);assert.equal(camera.view.fullWidth,1200);assert.equal(camera.view.fullHeight,1600);
     assert.ok(Math.abs(forward.y)<1e-12);
     for(const side of [-.6,.6]){
       const base=camera.position.clone().addScaledVector(forward,3).addScaledVector(right,side);

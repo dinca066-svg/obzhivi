@@ -3,7 +3,8 @@ import { boundsOf, footprint, doorGeometry } from './placement-core.mjs';
 export const LAYOUT_KEY='obzhivi-bedroom-layout-v1';
 export const CAMERA_KEY='obzhivi-bedroom-cameras-v1';
 export const DEFAULT_HEIGHTS={ceiling:2700,door:2100,sill:850,window:1500};
-export const ASPECT=16/10;
+export const FRAME_WIDTH=1200,FRAME_HEIGHT=1600;
+export const ASPECT=FRAME_WIDTH/FRAME_HEIGHT;
 export function validateHeights(h){
   if(!Object.values(h).every(Number.isFinite))return 'Укажите все высоты в миллиметрах.';
   if(h.ceiling<2200||h.ceiling>6000)return 'Высота потолка должна быть от 2200 до 6000 мм.';

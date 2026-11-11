@@ -4,7 +4,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { openingsFor, wallCells, cameraTarget, ASPECT } from './scene-core.mjs';
+import { openingsFor, wallCells, cameraTarget, ASPECT, FRAME_WIDTH } from './scene-core.mjs';
 import { frameMetrics } from './frame-metrics.mjs';
 import { applyLevelCamera } from './camera-projection.mjs';
 import { doorGeometry } from './placement-core.mjs';
@@ -79,6 +79,6 @@ export class RoomScene{
       this.renderer.render(this.scene,this.camera);
     }finally{for(const[o,mat]of originals)o.material=mat;this.scene.background=bg;this.renderer.toneMapping=tone;this.renderer.outputColorSpace=colorSpace;}
   }
-  capture(c,pass='rgb',width=1600){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
+  capture(c,pass='rgb',width=FRAME_WIDTH){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
   cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,verticalShiftFraction:leveled.shiftY,viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
 }

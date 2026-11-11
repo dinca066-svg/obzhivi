@@ -1,4 +1,4 @@
-import { ASPECT,levelCamera,cameraTarget } from './scene-core.mjs';
+import { ASPECT,FRAME_WIDTH,FRAME_HEIGHT,levelCamera,cameraTarget } from './scene-core.mjs';
 
 // Architectural perspective: level optical axis, world-up vertical, off-axis framing.
 // This single path is shared by previews, scoring, all render passes and exports.
@@ -7,7 +7,7 @@ export function applyLevelCamera(camera,controls){
   camera.position.set(c.x/1000,c.height/1000,c.z/1000);
   camera.up.set(0,1,0);camera.fov=c.fov;camera.aspect=ASPECT;
   camera.lookAt(...cameraTarget(c));
-  camera.setViewOffset(1600,1000,0,c.shiftY*1000,1600,1000);
+  camera.setViewOffset(FRAME_WIDTH,FRAME_HEIGHT,0,c.shiftY*FRAME_HEIGHT,FRAME_WIDTH,FRAME_HEIGHT);
   camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
   return c;
 }

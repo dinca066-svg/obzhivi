@@ -1,7 +1,7 @@
 import { cameraError,aimAt } from './scene-core.mjs';
 import { footprint } from './placement-core.mjs';
 
-export const COMPOSITION_VERSION=2;
+export const COMPOSITION_VERSION=3;
 export const SHOTS=[
   {id:'front',name:'Фронтально на изголовье',description:'По оси кровати, симметрично изножью.'},
   {id:'left',name:'Из левого угла',description:'Диагональ со стороны изножья слева.'},

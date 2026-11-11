@@ -10,9 +10,9 @@ import { proposeCompositions,relativeCamera,compositionError,SHOTS } from '../sr
 const product={dimensionsMm:{width:1720,depth:2120,height:1000}};
 function inspector(p,obstacles=[]){const b=boundsOf(p,footprint(product)),box=new Box3(new Vector3(b.left/1000,0,b.top/1000),new Vector3(b.right/1000,1,b.bottom/1000)),camera=new PerspectiveCamera(50,1.6,.05,30);return c=>{applyLevelCamera(camera,c);return frameMetrics(camera,box,obstacles);};}
 test('three compositions follow the bed at every quarter turn and keep the entire bed in frame',()=>{
-  const room={...DEFAULT_ROOM,width:6000,depth:6000,doorOffset:4000};
+  const room={...DEFAULT_ROOM,width:8000,depth:8000,doorOffset:4000};
   for(const rotation of [0,90,180,270]){
-    const p={x:3000,z:3000,rotation},inspect=inspector(p),out=proposeCompositions(room,p,product,DEFAULT_HEIGHTS,inspect);
+    const p={x:4000,z:4000,rotation},inspect=inspector(p),out=proposeCompositions(room,p,product,DEFAULT_HEIGHTS,inspect);
     assert.equal(out.filter(o=>o.camera).length,3);
     assert.ok(Math.abs(relativeCamera(out[0].camera,p).side)<.001);
     assert.ok(relativeCamera(out[1].camera,p).side<0);assert.ok(relativeCamera(out[2].camera,p).side>0);
