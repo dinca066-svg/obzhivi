@@ -32,7 +32,7 @@ export function cameraError(c,room,placement,product,h){
   if(!c||![c.x,c.z,c.height,c.yaw,c.pitch,c.fov].every(Number.isFinite))return 'Укажите все параметры камеры.';
   if(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180)return 'Передвиньте камеру внутрь комнаты, минимум на 18 см от стены.';
   if(c.height<800||c.height>Math.min(2200,h.ceiling-200))return 'Камера должна быть на высоте от 80 см до 220 см и ниже потолка.';
-  if(c.fov<35||c.fov>75||Math.abs(c.pitch)>30)return 'Угол обзора: 35–75°. Наклон: от −30° до 30°.';
+  if(c.fov<35||c.fov>75||c.pitch!==0||(c.roll??0)!==0||!Number.isFinite(c.shiftY??0)||Math.abs(c.shiftY??0)>.35)return 'Угол обзора: 35–75°. Горизонт закреплён; смещение кадра — до 35%.';
   const b=boundsOf(placement,footprint(product));
   if(c.x>b.left-120&&c.x<b.right+120&&c.z>b.top-120&&c.z<b.bottom+120)return 'Камера попала в зону кровати. Передвиньте её на свободное место.';
   const dg=doorGeometry(room),a=dg.hinge,bp=dg.opened,dx=bp.x-a.x,dz=bp.z-a.z;
@@ -40,7 +40,11 @@ export function cameraError(c,room,placement,product,h){
   if(Math.hypot(c.x-a.x-t*dx,c.z-a.z-t*dz)<150)return 'Камера слишком близко к открытой двери.';
   return '';
 }
-export function aimAt(c,x,z,y=1000){const dx=x-c.x,dz=z-c.z;return {...c,yaw:Math.atan2(dx,-dz)*180/Math.PI,pitch:Math.atan2(y-c.height,Math.hypot(dx,dz))*180/Math.PI};}
+export function levelCamera(c){
+  const shift=c.shiftY??(-Math.tan((c.pitch||0)*Math.PI/180)/(2*Math.tan(c.fov*Math.PI/360)));
+  return {...c,pitch:0,roll:0,shiftY:Math.max(-.35,Math.min(.35,shift))};
+}
+export function aimAt(c,x,z,y=1000){const dx=x-c.x,dz=z-c.z;return levelCamera({...c,yaw:Math.atan2(dx,-dz)*180/Math.PI,shiftY:(c.height-y)/(2*Math.max(1,Math.hypot(dx,dz))*Math.tan(c.fov*Math.PI/360))});}
 export function cameraCandidates(room,placement,product,h){
   const result=[];
   for(let ix=0;ix<=4;ix++)for(let iz=0;iz<=6;iz++){
@@ -51,4 +55,4 @@ export function cameraCandidates(room,placement,product,h){
   }
   return result;
 }
-export function cameraTarget(c){const yaw=c.yaw*Math.PI/180,pitch=c.pitch*Math.PI/180;return [c.x/1000+Math.sin(yaw)*Math.cos(pitch),c.height/1000+Math.sin(pitch),c.z/1000-Math.cos(yaw)*Math.cos(pitch)];}
+export function cameraTarget(c){const yaw=c.yaw*Math.PI/180;return [c.x/1000+Math.sin(yaw),c.height/1000,c.z/1000-Math.cos(yaw)];}

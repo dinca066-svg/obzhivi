@@ -5,6 +5,7 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { openingsFor, wallCells, cameraTarget, ASPECT } from './scene-core.mjs';
+import { applyLevelCamera } from './camera-projection.mjs';
 import { doorGeometry } from './placement-core.mjs';
 
 export const MASKS={floor:'#aa7744',ceiling:'#bbaadd',wallTop:'#e65c5c',wallRight:'#66aa66',wallBottom:'#6688cc',wallLeft:'#ddbb55',windows:'#44cccc',door:'#cc66aa',bed:'#8844dd'};
@@ -63,7 +64,7 @@ export class RoomScene{
       this.sourceBuffer=buffer;this.bedBounds=new THREE.Box3().setFromObject(this.bed,true);
     }finally{draco.dispose();ktx.dispose();}
   }
-  setCamera(c){this.camera.position.set(c.x/1000,c.height/1000,c.z/1000);this.camera.fov=c.fov;this.camera.aspect=ASPECT;this.camera.lookAt(...cameraTarget(c));this.camera.updateProjectionMatrix();this.camera.updateMatrixWorld(true);}
+  setCamera(c){return applyLevelCamera(this.camera,c);}
   coverage(c){this.setCamera(c);const b=this.bedBounds;let count=0;for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){const world=new THREE.Vector3(x,y,z),direction=world.clone().sub(this.camera.position),distance=direction.length(),p=world.clone().project(this.camera);const blocked=new THREE.Raycaster(this.camera.position,direction.normalize(),.05,Math.max(.05,distance-.02)).intersectObjects(this.architecture.children,false).length>0;if(!blocked&&Math.abs(p.x)<.95&&Math.abs(p.y)<.95&&p.z>-1&&p.z<1)count++;}return count/8;}
   render(c,pass='rgb',width=0){
     this.setCamera(c);const w=width||Math.max(320,Math.round(this.host.clientWidth*Math.min(devicePixelRatio,2)));this.renderer.setSize(w,Math.round(w/ASPECT),false);
@@ -78,5 +79,5 @@ export class RoomScene{
     }finally{for(const[o,mat]of originals)o.material=mat;this.scene.background=bg;this.renderer.toneMapping=tone;this.renderer.outputColorSpace=colorSpace;}
   }
   capture(c,pass='rgb',width=1600){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
-  cameraMetadata(c){this.setCamera(c);return {positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
+  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,verticalShiftFraction:leveled.shiftY,viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
 }
