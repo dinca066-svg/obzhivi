@@ -1,0 +1,13 @@
+import { build } from 'esbuild';
+import { mkdir, copyFile, cp, rm } from 'node:fs/promises';
+import './fixtures.mjs';
+await rm('dist', { recursive: true, force: true });
+await mkdir('dist/assets', { recursive: true });
+await build({ entryPoints: ['src/app.mjs'], outfile: 'dist/assets/app.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
+await copyFile('src/index.html', 'dist/index.html');
+await copyFile('src/styles.css', 'dist/assets/styles.css');
+await cp('public', 'dist', { recursive: true });
+await cp('node_modules/three/examples/jsm/libs/draco/gltf', 'dist/decoders/draco', { recursive: true });
+await mkdir('dist/decoders/basis', { recursive: true });
+for (const name of ['basis_transcoder.js', 'basis_transcoder.wasm']) await copyFile('node_modules/three/examples/jsm/libs/basis/'+name, 'dist/decoders/basis/'+name);
+console.log('Built dist/');

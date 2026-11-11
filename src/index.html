@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#20261d"><meta name="description" content="Кабинет подготовки мебели Обживи: просмотр GLB, проверка габаритов и масштаба, локальный каталог."><title>Обживи — каталог мебели</title><link rel="stylesheet" href="/assets/styles.css"></head>
+<body>
+<header class="top"><a class="brand" href="/">Обживи<span>Каталог мебели</span></a><span class="local-badge">Рабочий прототип</span></header>
+<main>
+  <div class="intro"><div><h1>Мебель в реальном масштабе</h1><p>Загрузите модель, укажите габариты и проверьте её перед добавлением в каталог.</p></div><button class="secondary" id="new-product">Новый товар</button></div>
+  <div class="workbench">
+    <section class="preview" aria-label="Просмотр модели">
+      <div class="preview-head"><div><h2 id="model-title">Модель товара</h2><p id="file-label">Загрузите GLB или откройте учебную модель.</p></div><span id="model-label" class="chip">GLB 2.0</span></div>
+      <div id="viewport" role="img" aria-label="Трёхмерная модель мебели. Вращение мышью; масштаб колесом. Есть кнопки ракурсов."><div id="viewer-placeholder"><span>Ваш товар — со всех сторон</span><p>Модель появится здесь после загрузки.</p></div><div class="viewer-overlay" id="viewer-loading" hidden>Открываем модель…</div><div class="axis-note">X — ширина · Y — высота · Z — глубина</div></div>
+      <div class="views" aria-label="Ракурсы модели"><button data-view="perspective" aria-pressed="true">Общий вид</button><button data-view="front" aria-pressed="false">Спереди</button><button data-view="side" aria-pressed="false">Сбоку</button><button data-view="top" aria-pressed="false">Сверху</button><label><input id="show-bounds" type="checkbox" checked> Габариты</label></div>
+      <div class="upload-zone" id="drop-zone"><label class="upload-button" for="file">Загрузить GLB<input id="file" type="file" accept=".glb,model/gltf-binary"></label><div><span>Или перетащите файл сюда</span><p>До 50 МБ · текстуры внутри файла · без анимации</p></div></div>
+      <div class="example-row"><button id="example" class="text-button">Открыть учебную кровать</button><button id="example-large" class="text-button">Пример с ошибкой масштаба</button></div>
+      <details class="orientation"><summary>Ориентация и точка установки</summary><p>Низ модели автоматически ставится на пол, центр основания — в начало координат. Если экспорт повёрнут, исправьте ориентацию.</p><div class="rotation-controls"><button data-rotate="x">X: +90°</button><button data-rotate="y">Y: +90°</button><button data-rotate="z">Z: +90°</button><button id="reset-transform">Исходная ориентация и масштаб</button></div><p id="normalization-note">В сцене: 1 единица = 1 метр.</p></details>
+    </section>
+    <section class="editor" aria-label="Карточка товара">
+      <div class="step-title"><span>01</span><h2>Карточка комплектации</h2></div>
+      <form id="product-form" novalidate>
+        <label>Название<input id="name" maxlength="160" autocomplete="off" placeholder="Например, кровать Норд"></label>
+        <div class="two-fields"><label>Производитель<input id="manufacturer" maxlength="160" autocomplete="off" placeholder="Название бренда"></label><label>Артикул комплектации<input id="sku" maxlength="160" autocomplete="off" placeholder="BED-160-OLIVE"></label></div>
+        <div class="two-fields"><label>Категория<select id="category"><option value="bed">Кровать</option><option value="sofa">Диван</option><option value="armchair">Кресло</option><option value="wardrobe">Шкаф</option><option value="table">Стол</option><option value="nightstand">Тумба</option><option value="other">Другое</option></select></label><label>Отделка<input id="finish" maxlength="160" placeholder="Ткань, цвет, материал"></label></div>
+        <div class="step-title section-divider"><span>02</span><h2>Внешние габариты</h2></div><p class="hint">Размер всего изделия, включая выступы. Для кровати — габариты каркаса, а не матраса.</p>
+        <div class="dimensions"><label>Ширина, мм<input id="width" type="number" min="1" max="50000" step="1" inputmode="numeric" placeholder="1800"></label><label>Глубина / длина, мм<input id="depth" type="number" min="1" max="50000" step="1" inputmode="numeric" placeholder="2200"></label><label>Высота, мм<input id="height" type="number" min="1" max="50000" step="1" inputmode="numeric" placeholder="1100"></label></div>
+        <div class="comparison"><div class="comparison-header"><h3>Сверка с моделью</h3><span id="check-chip" class="chip">Нужна модель</span></div><table><thead><tr><th>Габарит</th><th>Из GLB, мм</th><th>Отклонение</th></tr></thead><tbody id="comparison-body"><tr><td>Ширина</td><td>—</td><td>—</td></tr><tr><td>Глубина</td><td>—</td><td>—</td></tr><tr><td>Высота</td><td>—</td><td>—</td></tr></tbody></table><p id="check-message" aria-live="polite">После загрузки измерим геометрию файла.</p><button type="button" id="apply-scale" class="scale-button" hidden>Применить единый масштаб</button><p class="tolerance">Допуск прототипа по каждой оси: ±5 мм или ±1%, что больше.</p></div>
+        <label class="visual-check"><input type="checkbox" id="visual-check"><span>Проверил внешний вид, ориентацию и комплектацию. Модель соответствует этому товару.</span></label>
+        <button id="save" type="submit" class="primary" disabled>Добавить в каталог</button><button id="export" type="button" class="secondary export-button" disabled>Скачать комплект GLB + JSON</button>
+        <p class="storage-note">Каталог хранится в этом браузере. Для переноса на другой компьютер скачайте комплект. Общая база сервиса ещё не подключена.</p>
+      </form>
+    </section>
+  </div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <section class="catalog-section" aria-labelledby="catalog-heading"><div class="catalog-heading"><div><h2 id="catalog-heading">Проверенные товары</h2><p id="catalog-count">В локальном каталоге пока нет товаров.</p></div><span class="local-badge">В этом браузере</span></div><div id="catalog-grid" class="catalog-grid"></div></section>
+    <footer>Обживи · подготовка каталога <span>Масштаб меняется только равномерно. Перемещение и поворот сохраняют форму товара.</span></footer>
+</main>
+<script type="module" src="/assets/app.js"></script>
+</body></html>
