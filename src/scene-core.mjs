@@ -35,9 +35,9 @@ export function cameraError(c,room,placement,product,h){
   if(c.fov<35||c.fov>75||c.pitch!==0||(c.roll??0)!==0||!Number.isFinite(c.shiftY??0)||Math.abs(c.shiftY??0)>.35)return 'Угол обзора: 35–75°. Горизонт закреплён; смещение кадра — до 35%.';
   const b=boundsOf(placement,footprint(product));
   if(c.x>b.left-120&&c.x<b.right+120&&c.z>b.top-120&&c.z<b.bottom+120)return 'Камера попала в зону кровати. Передвиньте её на свободное место.';
-  const dg=doorGeometry(room),a=dg.hinge,bp=dg.opened,dx=bp.x-a.x,dz=bp.z-a.z;
+  const dg=doorGeometry(room),a=dg.hinge,bp=dg.closed,dx=bp.x-a.x,dz=bp.z-a.z;
   const t=Math.max(0,Math.min(1,((c.x-a.x)*dx+(c.z-a.z)*dz)/(dx*dx+dz*dz)));
-  if(Math.hypot(c.x-a.x-t*dx,c.z-a.z-t*dz)<150)return 'Камера слишком близко к открытой двери.';
+  if(Math.hypot(c.x-a.x-t*dx,c.z-a.z-t*dz)<150)return 'Камера слишком близко к двери.';
   return '';
 }
 export function levelCamera(c){

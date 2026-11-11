@@ -5,6 +5,7 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { openingsFor, wallCells, cameraTarget, ASPECT } from './scene-core.mjs';
+import { frameMetrics } from './frame-metrics.mjs';
 import { applyLevelCamera } from './camera-projection.mjs';
 import { doorGeometry } from './placement-core.mjs';
 
@@ -45,8 +46,8 @@ export class RoomScene{
         for(const edge of [o.bottom/1000,o.top/1000])this.box(this.architecture,horizontal?[width,.045,.12]:[.12,.045,width],toWorld(u,edge),'#faf9f3','windows');
       }
     }
-    const dg=doorGeometry(room),dx=dg.opened.x-dg.hinge.x,dz=dg.opened.z-dg.hinge.z;
-    const leaf=this.box(this.architecture,[.04,h.door/1000,room.doorWidth/1000],[(dg.opened.x+dg.hinge.x)/2000,h.door/2000,(dg.opened.z+dg.hinge.z)/2000],'#d6c7ae','door');leaf.rotation.y=Math.atan2(dx,dz);
+    const dg=doorGeometry(room),dx=dg.closed.x-dg.hinge.x,dz=dg.closed.z-dg.hinge.z;
+    const leaf=this.box(this.architecture,[.04,h.door/1000,room.doorWidth/1000],[(dg.closed.x+dg.hinge.x)/2000,h.door/2000,(dg.closed.z+dg.hinge.z)/2000],'#d6c7ae','door');leaf.rotation.y=Math.atan2(dx,dz);leaf.userData.doorState='closed';this.scene.updateMatrixWorld(true);
   }
   async loadBed(product,placement){
     const manager=new THREE.LoadingManager();manager.setURLModifier(url=>{if(/^(blob:|data:)/.test(url))return url;const u=new URL(url,location.href);if(u.origin===location.origin&&u.pathname.startsWith('/decoders/'))return url;throw new Error('Нужен GLB со встроенными текстурами. Откройте модель в каталоге.');});
@@ -65,7 +66,7 @@ export class RoomScene{
     }finally{draco.dispose();ktx.dispose();}
   }
   setCamera(c){return applyLevelCamera(this.camera,c);}
-  coverage(c){this.setCamera(c);const b=this.bedBounds;let count=0;for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){const world=new THREE.Vector3(x,y,z),direction=world.clone().sub(this.camera.position),distance=direction.length(),p=world.clone().project(this.camera);const blocked=new THREE.Raycaster(this.camera.position,direction.normalize(),.05,Math.max(.05,distance-.02)).intersectObjects(this.architecture.children,false).length>0;if(!blocked&&Math.abs(p.x)<.95&&Math.abs(p.y)<.95&&p.z>-1&&p.z<1)count++;}return count/8;}
+  inspectFrame(c){this.setCamera(c);return frameMetrics(this.camera,this.bedBounds,this.architecture.children);}
   render(c,pass='rgb',width=0){
     this.setCamera(c);const w=width||Math.max(320,Math.round(this.host.clientWidth*Math.min(devicePixelRatio,2)));this.renderer.setSize(w,Math.round(w/ASPECT),false);
     const originals=[];const bg=this.scene.background,tone=this.renderer.toneMapping,colorSpace=this.renderer.outputColorSpace;
