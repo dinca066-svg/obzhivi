@@ -215,6 +215,7 @@ async function refreshCatalog() {
         link.textContent = 'Посмотреть у продавца ↗'; link.setAttribute('aria-label', `Посмотреть у продавца: ${product.name}`); wrapper.append(link);
         const domain = document.createElement('span'); domain.className = 'seller-domain'; domain.textContent = new URL(url).hostname; wrapper.append(domain);
       }
+      if(product.category==='bed') {const place=document.createElement('a');place.className='seller-link';place.href='/planner.html?product='+encodeURIComponent(product.id);place.textContent='Поставить в спальню →';wrapper.append(place);}
       grid.append(wrapper);
     }
   } catch (error) { notice('Локальное хранилище недоступно. Разрешите хранение данных для этого сайта: ' + error.message, true); }
