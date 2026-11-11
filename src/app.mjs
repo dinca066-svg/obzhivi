@@ -9,6 +9,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { zipSync, strToU8 } from 'fflate';
 import { inspectGlb, compareDimensions, itemKey, validateCard, safeStem, safeProductUrl, MAX_FILE_BYTES, AXES } from './core.mjs';
 import { listProducts, saveProduct } from './db.mjs';
+import { productPhoto } from './product-photo.mjs';
 
 const $ = id => document.getElementById(id);
 const fmt = (n, digits = 0) => (Math.abs(n) < .5 * 10 ** -digits ? 0 : n).toLocaleString('ru-RU', { maximumFractionDigits: digits });
@@ -17,6 +18,7 @@ let renderer, scene, camera, controls, floor, bounds, orientation, asset, normal
 let sourceBuffer = null, fileName = '', currentId = null, scaleFactor = 1, actual = null;
 let comparison = { status: 'incomplete', rows: [] }, loading = false, saving = false, dirty = true, token = 0, demo = false;
 let products = [], activeView = 'perspective';
+let photoDataUrl='',photoRemoved=false,photoRevision=0,photoLoading=false;
 
 function notice(text, error = false) {
   const el = $('notice'); el.textContent = text; el.hidden = !text;
@@ -28,6 +30,7 @@ function card() {
     dimensionsMm: Object.fromEntries(AXES.map(axis => [axis, Number($(axis).value)])) };
 }
 function setFields(value) {
+  photoRevision++;photoDataUrl=value?.photoDataUrl||'';photoRemoved=!!value?.photoRemoved;
   for (const key of ['name','manufacturer','sku','category','finish','productUrl']) $(key).value = value?.[key] || (key === 'category' ? 'bed' : '');
   for (const axis of AXES) $(axis).value = value?.dimensionsMm?.[axis] || '';
 }
@@ -142,6 +145,10 @@ async function loadBuffer(buffer, name, { record = null, isDemo = false } = {}) 
   } finally { loaders?.dispose(); if (ticket === token) setBusy(false); }
 }
 function refreshCheck() {
+  const photo=productPhoto({...card(),photoDataUrl,photoRemoved});$('photo-preview').hidden=!photo;$('remove-photo').hidden=!photo;
+  if(photo)$('photo-preview').src=photo.src;else $('photo-preview').removeAttribute('src');
+  $('photo-caption').textContent=photoLoading?'Читаем фото…':photo?.label||'Фото пока не добавлено.';
+  $('product-photo').disabled=loading||saving||photoLoading;$('remove-photo').disabled=loading||saving||photoLoading;
   const rawUrl = $('productUrl').value.trim(), url = safeProductUrl(rawUrl);
   $('product-url-error').hidden = !rawUrl || !!url;
   $('productUrl').setAttribute('aria-invalid', String(!!rawUrl && !url));
@@ -168,7 +175,7 @@ function refreshCheck() {
   }
   $('apply-scale').hidden = status !== 'uniform_scale'; $('apply-scale').disabled = loading || saving;
   if (status === 'uniform_scale') $('apply-scale').textContent = `Применить единый масштаб ×${fmt(comparison.factor, 8)}`;
-  const ready = !loading && !saving && sourceBuffer && status === 'match' && !validateCard(card()) && $('visual-check').checked;
+  const ready = !loading && !saving && !photoLoading && sourceBuffer && status === 'match' && !validateCard(card()) && $('visual-check').checked;
   $('save').disabled = !ready; $('save').textContent = saving ? 'Сохраняем…' : currentId ? 'Сохранить изменения' : 'Добавить в каталог';
   $('export').disabled = !ready || !currentId || dirty;
   document.querySelectorAll('[data-rotate]').forEach(button => button.disabled = loading || saving || !normalRoot);
@@ -205,7 +212,9 @@ async function refreshCatalog() {
     for (const product of products) {
       const wrapper = document.createElement('article'); wrapper.className = 'product-card';
       const tile = document.createElement('button'); tile.className = 'product-tile'; tile.type = 'button'; tile.setAttribute('aria-label', `Открыть ${product.name}, ${product.sku}`);
-      if (product.thumbnail) { const image = document.createElement('img'); image.src = product.thumbnail; image.alt = product.name; tile.append(image); }
+      const photo=productPhoto(product);
+      if (photo) { const image = document.createElement('img'); image.src = photo.src; image.alt = 'Фото товара: '+product.name; tile.append(image); }
+      else {const empty=document.createElement('div');empty.className='photo-missing';empty.textContent='Фото товара пока не добавлено';tile.append(empty);}
       const body = document.createElement('div'); body.className = 'tile-body';
       for (const [tag,text,cls] of [['strong',product.name,''],['span',`${product.manufacturer} · ${product.sku}`,''],['span',`${product.dimensionsMm.width} × ${product.dimensionsMm.depth} × ${product.dimensionsMm.height} мм`,'tile-dimensions'],['span',product.demo?'Учебный товар · проверен':'Проверен · масштаб 1:1','']]) { const node = document.createElement(tag); node.textContent=text;node.className=cls;body.append(node); }
       tile.append(body); tile.onclick = async () => { if (loading || saving) return; await loadBuffer(await product.sourceGlb.arrayBuffer(), product.sourceFileName, { record: product }); $('product-form').scrollIntoView({ block: 'start', behavior: 'auto' }); }; wrapper.append(tile);
@@ -220,7 +229,14 @@ async function refreshCatalog() {
     }
   } catch (error) { notice('Локальное хранилище недоступно. Разрешите хранение данных для этого сайта: ' + error.message, true); }
 }
-document.querySelectorAll('#product-form input:not([type=checkbox]), #product-form select').forEach(input => input.addEventListener('input', () => markDirty(true)));
+document.querySelectorAll('#product-form input:not([type=checkbox]):not([type=file]), #product-form select').forEach(input => input.addEventListener('input', () => markDirty(true)));
+$('product-photo').onchange=async event=>{
+  const file=event.target.files?.[0];event.target.value='';if(!file||loading||saving||photoLoading)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>8*1024*1024){notice('Нужно фото JPG, PNG или WebP до 8 МБ.',true);return;}
+  const revision=++photoRevision;photoLoading=true;refreshCheck();
+  try{const bitmap=await createImageBitmap(file);bitmap.close();const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});if(revision!==photoRevision)return;photoDataUrl=data;photoRemoved=false;markDirty();notice('Фотография добавлена. Сохраните изменения карточки.');}catch{notice('Не удалось прочитать изображение. Выберите другой файл.',true);}finally{photoLoading=false;refreshCheck();}
+};
+$('remove-photo').onclick=()=>{photoRevision++;photoDataUrl='';photoRemoved=true;markDirty();};
 $('visual-check').addEventListener('change', () => markDirty());
 $('show-bounds').addEventListener('change', () => { if (bounds) bounds.visible = !!normalRoot && $('show-bounds').checked; render(); });
 document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => frame(button.dataset.view));
@@ -243,14 +259,14 @@ $('product-form').onsubmit = async event => {
   try {
     frame('perspective');const wasVisible=bounds.visible;bounds.visible=false;render();const thumbnail=renderer.domElement.toDataURL('image/jpeg',.75);bounds.visible=wasVisible;render();
     const id=currentId||crypto.randomUUID(),existing=products.find(p=>p.id===id),now=new Date().toISOString();
-    const product={id,uniqueKey:key,...value,sourceFileName:fileName,sourceGlb:new Blob([sourceBuffer],{type:'model/gltf-binary'}),normalization:{uniformScale:scaleFactor,rotationQuaternion:orientation.quaternion.toArray(),origin:'floor_center'},measuredDimensionsMm:{...actual},visualVerified:true,demo,thumbnail,createdAt:existing?.createdAt||now,updatedAt:now};
+    const product={id,uniqueKey:key,...value,photoDataUrl,photoRemoved,sourceFileName:fileName,sourceGlb:new Blob([sourceBuffer],{type:'model/gltf-binary'}),normalization:{uniformScale:scaleFactor,rotationQuaternion:orientation.quaternion.toArray(),origin:'floor_center'},measuredDimensionsMm:{...actual},visualVerified:true,demo,thumbnail,createdAt:existing?.createdAt||now,updatedAt:now};
     await saveProduct(product);currentId=id;dirty=false;await refreshCatalog();notice('Товар сохранён в локальном каталоге. Можно скачать нормализованный GLB и карточку JSON одним архивом.');
   } catch(error) { notice(error.name==='ConstraintError'?'Этот артикул уже занят у производителя.':error.name==='QuotaExceededError'?'Недостаточно места в браузере. Освободите место и повторите сохранение.':'Не удалось сохранить товар: '+error.message,true); }
   finally { saving=false;setBusy(false); }
 };
 $('export').onclick=async()=>{
   if($('export').disabled)return;saving=true;refreshCheck();$('export').textContent='Готовим комплект…';
-  try { normalRoot.userData={sku:card().sku,manufacturer:card().manufacturer,dimensionsMm:card().dimensionsMm};normalRoot.updateWorldMatrix(true,true);const glb=await new GLTFExporter().parseAsync(normalRoot,{binary:true,onlyVisible:true});const metadata=snapshotMetadata();const archive=zipSync({'model.glb':new Uint8Array(glb),'product.json':strToU8(JSON.stringify(metadata,null,2)),'README.txt':strToU8('Обживи — комплект товара\nmodel.glb: модель с применёнными ориентацией, единым масштабом и точкой установки на полу.\nproduct.json: карточка товара; габариты — в миллиметрах, геометрия GLB — в метрах.\nПри загрузке в комнату используйте масштаб [1,1,1].\n')},{level:1});download(archive,safeStem(card().sku)+'.zip','application/zip');notice('Комплект подготовлен: нормализованная модель model.glb и карточка product.json.');}
+  try { normalRoot.userData={sku:card().sku,manufacturer:card().manufacturer,dimensionsMm:card().dimensionsMm};normalRoot.updateWorldMatrix(true,true);const glb=await new GLTFExporter().parseAsync(normalRoot,{binary:true,onlyVisible:true});const metadata=snapshotMetadata();const photo=productPhoto({...card(),photoDataUrl,photoRemoved});const photoFiles={};if(photo){const response=await fetch(photo.src);if(!response.ok)throw new Error('Фото товара недоступно');const extension=photo.src.startsWith('data:image/png')?'png':photo.src.startsWith('data:image/webp')?'webp':'jpg';const filename='photo.'+extension;photoFiles[filename]=new Uint8Array(await response.arrayBuffer());metadata.product.photo={file:filename,sourceUrl:photo.sourceUrl};}const archive=zipSync({...photoFiles,'model.glb':new Uint8Array(glb),'product.json':strToU8(JSON.stringify(metadata,null,2)),'README.txt':strToU8('Обживи — комплект товара\nmodel.glb: модель с применёнными ориентацией, единым масштабом и точкой установки на полу.\nproduct.json: карточка товара; габариты — в миллиметрах, геометрия GLB — в метрах.\nПри загрузке в комнату используйте масштаб [1,1,1].\n')},{level:1});download(archive,safeStem(card().sku)+'.zip','application/zip');notice('Комплект подготовлен: нормализованная модель model.glb и карточка product.json.');}
   catch(error){notice('Не удалось экспортировать модель: '+error.message,true);}finally{saving=false;$('export').textContent='Скачать комплект GLB + JSON';refreshCheck();}
 };
 try { initViewer(); await refreshCatalog(); await openExample(); }

@@ -6,6 +6,8 @@ await mkdir('dist/assets', { recursive: true });
 await build({ entryPoints: ['src/app.mjs'], outfile: 'dist/assets/app.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
 await build({ entryPoints: ['src/planner.mjs'], outfile: 'dist/assets/planner.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
 await copyFile('src/planner.html', 'dist/planner.html');
+await mkdir('dist/planner', {recursive:true});
+await copyFile('src/planner.html', 'dist/planner/index.html');
 await copyFile('src/planner.css', 'dist/assets/planner.css');
 await copyFile('src/index.html', 'dist/index.html');
 await copyFile('src/styles.css', 'dist/assets/styles.css');
