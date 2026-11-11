@@ -1,3 +1,4 @@
+import {GRV_NIGHTSTAND} from './bundled-products.mjs';
 let promise;
 function database() {
   if (!promise) promise = new Promise((resolve, reject) => {
@@ -17,7 +18,7 @@ export async function listProducts() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('products', 'readonly');
     const request = tx.objectStore('products').getAll();
-    request.onsuccess = () => resolve(request.result.sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)));
+    request.onsuccess = () => resolve([...request.result,...(request.result.some(p=>p.id===GRV_NIGHTSTAND.id)?[]:[GRV_NIGHTSTAND])].sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)));
     request.onerror = () => reject(request.error);
   });
 }

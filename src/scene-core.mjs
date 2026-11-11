@@ -28,7 +28,7 @@ export function wallCells(length,height,openings){
   }
   return cells;
 }
-export function sceneSignature(layout,product){return JSON.stringify({room:layout.room,placement:layout.placement,productId:product.id,updatedAt:product.updatedAt||null,normalization:product.normalization,dimensions:product.dimensionsMm});}
+export function sceneSignature(layout,product){return JSON.stringify({room:layout.room,placement:layout.placement,furniture:layout.furniture||[],productId:product.id,updatedAt:product.updatedAt||null,normalization:product.normalization,dimensions:product.dimensionsMm});}
 export function cameraError(c,room,placement,product,h){
   if(!c||![c.x,c.z,c.height,c.yaw,c.pitch,c.fov].every(Number.isFinite))return 'Укажите все параметры камеры.';
   if(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180)return 'Передвиньте камеру внутрь комнаты, минимум на 18 см от стены.';

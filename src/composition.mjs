@@ -1,7 +1,7 @@
 import { cameraError,aimAt } from './scene-core.mjs';
 import { footprint } from './placement-core.mjs';
 
-export const COMPOSITION_VERSION=4;
+export const COMPOSITION_VERSION=5;
 export const SHOTS=[
   {id:'front',name:'Фронтально на изголовье',description:'По оси кровати, симметрично изножью.'},
   {id:'left',name:'Из левого угла',description:'Диагональ со стороны изножья слева.'},
@@ -23,7 +23,7 @@ export function compositionError(c,type,room,p,product,h,inspect){
   }
   const m=inspect(c);
   if(m.blocked)return 'Мебель перекрыта стеной или другим предметом.';
-  if(!m.fits)return 'Кровать обрезается краем кадра. Отодвиньте камеру, измените угол обзора или смещение кадра.';
+  if(!m.fits)return 'Мебель обрезается краем кадра. Отодвиньте камеру, измените угол обзора или смещение кадра.';
   return '';
 }
 export function proposeCompositions(room,p,product,h,inspect,balance=c=>c){
@@ -42,14 +42,14 @@ export function proposeCompositions(room,p,product,h,inspect,balance=c=>c){
       if(cameraError(base,room,p,product,h))continue;
       for(const fov of [35,40,45,50,55,60,65]){
         let c={...base,fov,shiftY:0};const unshifted=inspect(c);
-        c.shiftY=Math.max(-.35,Math.min(.35,-(unshifted.minY+unshifted.maxY)/4));
+        c.shiftY=Math.max(-.35,Math.min(.35,-(unshifted.minY+unshifted.maxY)/4));c.shiftX=Math.max(-.35,Math.min(.35,(unshifted.minX+unshifted.maxX)/4));
         if(compositionError(c,shot.id,room,p,product,h,inspect))continue;
         const m=inspect(c),rel=relativeCamera(c,p),angle=Math.abs(Math.atan2(rel.side,rel.forward)*180/Math.PI);
         const score=Math.abs(fov-45)*.025+Math.abs(height-1400)*.001+Math.abs(m.width-.62)*3+(shot.id==='front'?0:Math.abs(angle-40)*.012);
         if(score<bestScore){const balanced=balance({...c,composition:shot.id});if(balanced&&!compositionError(balanced,shot.id,room,p,product,h,inspect)){best=balanced;bestScore=score;}}
       }
     }
-    return {camera:best,reason:best?'':(shot.id==='front'?'Перед изножьем недостаточно места для полного фронтального кадра.':'В этом углу не получается показать кровать целиком без перекрытия.')};
+    return {camera:best,reason:best?'':(shot.id==='front'?'Перед изножьем недостаточно места для полного фронтального кадра.':'В этом углу не получается показать мебель целиком без перекрытия.')};
   });
   // Reject effectively duplicate corner views (e.g. unusually narrow floor plans).
   const left=outcomes[1].camera,right=outcomes[2].camera;

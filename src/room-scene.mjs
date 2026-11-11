@@ -1,3 +1,4 @@
+import {productBuffer} from './bundled-products.mjs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -22,7 +23,7 @@ export class RoomScene{
     const light=new THREE.DirectionalLight(0xfff3dc,1.7);light.position.set(4,7,6);light.castShadow=true;light.shadow.mapSize.set(2048,2048);Object.assign(light.shadow.camera,{left:-8,right:8,top:8,bottom:-8,near:.1,far:35});light.shadow.normalBias=.025;light.shadow.bias=-.0001;this.scene.add(light);this.keyLight=light;this.scene.add(light.target);
     const fill=new THREE.PointLight(0xffffff,12,20);fill.position.set(1.5,2.4,3);this.scene.add(fill);
     const pmrem=new THREE.PMREMGenerator(this.renderer),env=new RoomEnvironment();this.environment=pmrem.fromScene(env,.04);this.scene.environment=this.environment.texture;this.scene.environmentIntensity=.35;env.dispose();pmrem.dispose();
-    this.architecture=new THREE.Group();this.scene.add(this.architecture);this.bed=null;
+    this.architecture=new THREE.Group();this.scene.add(this.architecture);this.bed=null;this.furniture=[];this.extraBuffers=new Map();
     this.maskMaterials=Object.fromEntries(Object.entries(MASKS).map(([id,color])=>[id,new THREE.MeshBasicMaterial({color,toneMapped:false,side:THREE.DoubleSide})]));
     this.balanceTarget=new THREE.WebGLRenderTarget(192,256);
     this.balancePixels=new Uint8Array(192*256*4);
@@ -54,34 +55,43 @@ export class RoomScene{
     const dg=doorGeometry(room),dx=dg.closed.x-dg.hinge.x,dz=dg.closed.z-dg.hinge.z;
     const leaf=this.box(this.architecture,[.04,h.door/1000,room.doorWidth/1000],[(dg.closed.x+dg.hinge.x)/2000,h.door/2000,(dg.closed.z+dg.hinge.z)/2000],'#d6c7ae','door');leaf.rotation.y=Math.atan2(dx,dz);leaf.userData.doorState='closed';this.scene.updateMatrixWorld(true);
   }
-  async loadBed(product,placement){
+  async loadBed(product,placement){return this.loadFurniture(product,placement,'bed');}
+  async loadFurniture(product,placement,mask){
     const manager=new THREE.LoadingManager();manager.setURLModifier(url=>{if(/^(blob:|data:)/.test(url))return url;const u=new URL(url,location.href);if(u.origin===location.origin&&u.pathname.startsWith('/decoders/'))return url;throw new Error('Нужен GLB со встроенными текстурами. Откройте модель в каталоге.');});
     const draco=new DRACOLoader(manager).setDecoderPath('/decoders/draco/'),ktx=new KTX2Loader(manager).setTranscoderPath('/decoders/basis/').detectSupport(this.renderer);
     const loader=new GLTFLoader(manager).setDRACOLoader(draco).setKTX2Loader(ktx).setMeshoptDecoder(MeshoptDecoder);
-    let buffer;if(product.sourceGlb)buffer=await product.sourceGlb.arrayBuffer();else if(product.id==='demo-bed'){const r=await fetch('/examples/bed.glb');if(!r.ok)throw new Error('Учебная модель недоступна.');buffer=await r.arrayBuffer();}else throw new Error('У выбранного товара нет GLB. Добавьте модель в каталоге.');
+    const buffer=await productBuffer(product);
     try{
       const gltf=await loader.parseAsync(buffer,'');const oriented=new THREE.Group();oriented.add(gltf.scene);
       if(product.normalization?.rotationQuaternion)oriented.quaternion.fromArray(product.normalization.rotationQuaternion);
       const normalized=new THREE.Group();normalized.add(oriented);normalized.scale.setScalar(product.normalization?.uniformScale||1);normalized.updateWorldMatrix(true,true);
       const b=new THREE.Box3().setFromObject(normalized,true);if(b.isEmpty()||![...b.min.toArray(),...b.max.toArray()].every(Number.isFinite))throw new Error('Не удалось определить габариты модели.');
       const center=b.getCenter(new THREE.Vector3());normalized.position.set(-center.x,-b.min.y,-center.z);
-      this.bed=new THREE.Group();this.bed.add(normalized);this.bed.position.set(placement.x/1000,0,placement.z/1000);this.bed.rotation.y=-placement.rotation*Math.PI/180;
-      this.bed.traverse(o=>{if(o.isMesh){o.userData.mask='bed';o.castShadow=true;o.receiveShadow=true;}});this.scene.add(this.bed);this.scene.updateMatrixWorld(true);
-      this.sourceBuffer=buffer;this.bedBounds=new THREE.Box3().setFromObject(this.bed,true);
+      const group=new THREE.Group();group.add(normalized);group.position.set(placement.x/1000,0,placement.z/1000);group.rotation.y=-placement.rotation*Math.PI/180;
+      group.traverse(o=>{if(o.isMesh){o.userData.mask=mask;o.castShadow=true;o.receiveShadow=true;}});this.scene.add(group);this.scene.updateMatrixWorld(true);
+      const bounds=new THREE.Box3().setFromObject(group,true);
+      if(mask==='bed'){this.bed=group;this.sourceBuffer=buffer;this.bedBounds=bounds;}
+      else{this.furniture.push({group,bounds,product,placement,mask});this.extraBuffers.set(product.id,buffer);const color=['#dd5533','#3388ee','#66bb33','#eecc22'][this.furniture.length-1];this.maskMaterials[mask]=new THREE.MeshBasicMaterial({color,toneMapped:false,side:THREE.DoubleSide});}
     }finally{draco.dispose();ktx.dispose();}
   }
   setCamera(c){return applyLevelCamera(this.camera,c);}
-  inspectFrame(c){this.setCamera(c);return frameMetrics(this.camera,this.bedBounds,this.architecture.children);}
-  visualCenter(c){
+  inspectFrame(c){
+    this.setCamera(c);const main=frameMetrics(this.camera,this.bedBounds,this.architecture.children),all=[main,...this.furniture.map(f=>frameMetrics(this.camera,f.bounds,this.architecture.children))];
+    const inside=this.furniture.some(f=>{const b=f.bounds;return this.camera.position.x>b.min.x-.12&&this.camera.position.x<b.max.x+.12&&this.camera.position.z>b.min.z-.12&&this.camera.position.z<b.max.z+.12;});
+    return {...main,fits:all.every(m=>m.fits),blocked:inside||all.some(m=>m.blocked),minX:Math.min(...all.map(m=>m.minX)),maxX:Math.max(...all.map(m=>m.maxX)),minY:Math.min(...all.map(m=>m.minY)),maxY:Math.max(...all.map(m=>m.maxY))};
+  }
+  maskPalette(){return {...MASKS,...Object.fromEntries(this.furniture.map(f=>[f.mask,'#'+this.maskMaterials[f.mask].color.getHexString()]))};}
+  visualCenter(c,onlyMask=null){
     this.setCamera(c);const originals=[],target=this.renderer.getRenderTarget(),background=this.scene.background,shadows=this.renderer.shadowMap.enabled;
     try{
       this.scene.background=new THREE.Color(0);this.renderer.shadowMap.enabled=false;
-      this.scene.traverse(o=>{if(o.isMesh){originals.push([o,o.material]);o.material=o.userData.mask==='bed'?this.balanceWhite:this.balanceBlack;}});
+      this.scene.traverse(o=>{if(o.isMesh){originals.push([o,o.material]);o.material=(onlyMask?o.userData.mask===onlyMask:(o.userData.mask==='bed'||o.userData.mask?.startsWith('furniture-')))?this.balanceWhite:this.balanceBlack;}});
       this.renderer.setRenderTarget(this.balanceTarget);this.renderer.render(this.scene,this.camera);
       this.renderer.readRenderTargetPixels(this.balanceTarget,0,0,192,256,this.balancePixels);
       return silhouetteCenter(this.balancePixels,192,256);
     }finally{for(const[o,m]of originals)o.material=m;this.scene.background=background;this.renderer.shadowMap.enabled=shadows;this.renderer.setRenderTarget(target);}
   }
+  furnitureVisibility(c){return this.furniture.map(f=>({instanceId:f.placement.id,visibleAreaFraction:this.visualCenter(c,f.mask)?.area||0}));}
   balanceCamera(candidate){
     for(let fov=candidate.fov;fov<=65;fov=Math.min(65,fov+5)){
       let c={...candidate,fov};let center;
@@ -105,5 +115,5 @@ export class RoomScene{
     }finally{for(const[o,mat]of originals)o.material=mat;this.scene.background=bg;this.renderer.toneMapping=tone;this.renderer.outputColorSpace=colorSpace;}
   }
   capture(c,pass='rgb',width=FRAME_WIDTH){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
-  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,horizontalShiftFraction:leveled.shiftX||0,verticalShiftFraction:leveled.shiftY,visualBalance:c.visualBalance,viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
+  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,horizontalShiftFraction:leveled.shiftX||0,verticalShiftFraction:leveled.shiftY,visualBalance:c.visualBalance,furnitureVisibility:this.furnitureVisibility(c),viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
 }

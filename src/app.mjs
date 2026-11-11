@@ -1,3 +1,4 @@
+import {productBuffer} from './bundled-products.mjs';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -207,7 +208,7 @@ function download(bytes, name, type) {
 }
 async function refreshCatalog() {
   try {
-    products = await listProducts(); $('catalog-count').textContent = products.length ? `Сохранено товаров: ${products.length}. Нажмите на карточку, чтобы открыть.` : 'В локальном каталоге пока нет товаров.';
+    products = await listProducts(); $('catalog-count').textContent = products.length ? `Товаров в каталоге: ${products.length}. Нажмите на карточку, чтобы открыть.` : 'В локальном каталоге пока нет товаров.';
     const grid = $('catalog-grid'); grid.replaceChildren();
     for (const product of products) {
       const wrapper = document.createElement('article'); wrapper.className = 'product-card';
@@ -216,15 +217,15 @@ async function refreshCatalog() {
       if (photo) { const image = document.createElement('img'); image.src = photo.src; image.alt = 'Фото товара: '+product.name; tile.append(image); }
       else {const empty=document.createElement('div');empty.className='photo-missing';empty.textContent='Фото товара пока не добавлено';tile.append(empty);}
       const body = document.createElement('div'); body.className = 'tile-body';
-      for (const [tag,text,cls] of [['strong',product.name,''],['span',`${product.manufacturer} · ${product.sku}`,''],['span',`${product.dimensionsMm.width} × ${product.dimensionsMm.depth} × ${product.dimensionsMm.height} мм`,'tile-dimensions'],['span',product.demo?'Учебный товар · проверен':'Проверен · масштаб 1:1','']]) { const node = document.createElement(tag); node.textContent=text;node.className=cls;body.append(node); }
-      tile.append(body); tile.onclick = async () => { if (loading || saving) return; await loadBuffer(await product.sourceGlb.arrayBuffer(), product.sourceFileName, { record: product }); $('product-form').scrollIntoView({ block: 'start', behavior: 'auto' }); }; wrapper.append(tile);
+      for (const [tag,text,cls] of [['strong',product.name,''],['span',`${product.manufacturer} · ${product.sku}`,''],['span',`${product.dimensionsMm.width} × ${product.dimensionsMm.depth} × ${product.dimensionsMm.height} мм`,'tile-dimensions'],['span',product.modelApproximate?'Модель для примерки · пропорции требуют уточнения':product.demo?'Учебный товар · проверен':'Проверен · масштаб 1:1','']]) { const node = document.createElement(tag); node.textContent=text;node.className=cls;body.append(node); }
+      tile.append(body); tile.onclick = async () => { if (loading || saving) return; await loadBuffer(await productBuffer(product), product.sourceFileName, { record: product }); $('product-form').scrollIntoView({ block: 'start', behavior: 'auto' }); }; wrapper.append(tile);
       const url = safeProductUrl(product.productUrl);
       if (url) {
         const link = document.createElement('a'); link.className = 'seller-link'; link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
         link.textContent = 'Посмотреть у продавца ↗'; link.setAttribute('aria-label', `Посмотреть у продавца: ${product.name}`); wrapper.append(link);
         const domain = document.createElement('span'); domain.className = 'seller-domain'; domain.textContent = new URL(url).hostname; wrapper.append(domain);
       }
-      if(product.category==='bed') {const place=document.createElement('a');place.className='seller-link';place.href='/planner.html?product='+encodeURIComponent(product.id);place.textContent='Поставить в спальню →';wrapper.append(place);}
+      if(['bed','nightstand'].includes(product.category)) {const place=document.createElement('a');place.className='seller-link';place.href=product.category==='bed'?'/planner.html?product='+encodeURIComponent(product.id):'/planner.html';place.textContent='Поставить в спальню →';wrapper.append(place);}
       grid.append(wrapper);
     }
   } catch (error) { notice('Локальное хранилище недоступно. Разрешите хранение данных для этого сайта: ' + error.message, true); }
