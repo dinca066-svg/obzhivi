@@ -15,4 +15,10 @@ await cp('public', 'dist', { recursive: true });
 await cp('node_modules/three/examples/jsm/libs/draco/gltf', 'dist/decoders/draco', { recursive: true });
 await mkdir('dist/decoders/basis', { recursive: true });
 for (const name of ['basis_transcoder.js', 'basis_transcoder.wasm']) await copyFile('node_modules/three/examples/jsm/libs/basis/'+name, 'dist/decoders/basis/'+name);
+
+await build({ entryPoints: ['src/cameras.mjs'], outfile: 'dist/assets/cameras.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
+await copyFile('src/cameras.html', 'dist/cameras.html');
+await mkdir('dist/cameras', {recursive:true});
+await copyFile('src/cameras.html', 'dist/cameras/index.html');
+await copyFile('src/cameras.css', 'dist/assets/cameras.css');
 console.log('Built dist/');
