@@ -6,6 +6,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { openingsFor, wallCells, cameraTarget, ASPECT, FRAME_WIDTH } from './scene-core.mjs';
 import { frameMetrics } from './frame-metrics.mjs';
+import { silhouetteCenter,centeredShift,isCentered } from './visual-balance.mjs';
 import { applyLevelCamera } from './camera-projection.mjs';
 import { doorGeometry } from './placement-core.mjs';
 
@@ -23,6 +24,10 @@ export class RoomScene{
     const pmrem=new THREE.PMREMGenerator(this.renderer),env=new RoomEnvironment();this.environment=pmrem.fromScene(env,.04);this.scene.environment=this.environment.texture;this.scene.environmentIntensity=.35;env.dispose();pmrem.dispose();
     this.architecture=new THREE.Group();this.scene.add(this.architecture);this.bed=null;
     this.maskMaterials=Object.fromEntries(Object.entries(MASKS).map(([id,color])=>[id,new THREE.MeshBasicMaterial({color,toneMapped:false,side:THREE.DoubleSide})]));
+    this.balanceTarget=new THREE.WebGLRenderTarget(192,256);
+    this.balancePixels=new Uint8Array(192*256*4);
+    this.balanceWhite=new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,toneMapped:false});
+    this.balanceBlack=new THREE.MeshBasicMaterial({color:0x000000,side:THREE.DoubleSide,toneMapped:false});
     this.depth=new THREE.MeshDepthMaterial({depthPacking:THREE.BasicDepthPacking,side:THREE.DoubleSide});
     this.depthUniforms={captureNear:{value:this.camera.near},captureFar:{value:this.camera.far}};
     this.depth.onBeforeCompile=shader=>{Object.assign(shader.uniforms,this.depthUniforms);shader.fragmentShader='uniform float captureNear;\nuniform float captureFar;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );','float viewDepth = (captureNear * captureFar) / (captureFar - fragCoordZ * (captureFar - captureNear));\n gl_FragColor = vec4(vec3(1.0 - clamp((viewDepth-captureNear)/(captureFar-captureNear),0.0,1.0)),1.0);');};
@@ -67,6 +72,26 @@ export class RoomScene{
   }
   setCamera(c){return applyLevelCamera(this.camera,c);}
   inspectFrame(c){this.setCamera(c);return frameMetrics(this.camera,this.bedBounds,this.architecture.children);}
+  visualCenter(c){
+    this.setCamera(c);const originals=[],target=this.renderer.getRenderTarget(),background=this.scene.background,shadows=this.renderer.shadowMap.enabled;
+    try{
+      this.scene.background=new THREE.Color(0);this.renderer.shadowMap.enabled=false;
+      this.scene.traverse(o=>{if(o.isMesh){originals.push([o,o.material]);o.material=o.userData.mask==='bed'?this.balanceWhite:this.balanceBlack;}});
+      this.renderer.setRenderTarget(this.balanceTarget);this.renderer.render(this.scene,this.camera);
+      this.renderer.readRenderTargetPixels(this.balanceTarget,0,0,192,256,this.balancePixels);
+      return silhouetteCenter(this.balancePixels,192,256);
+    }finally{for(const[o,m]of originals)o.material=m;this.scene.background=background;this.renderer.shadowMap.enabled=shadows;this.renderer.setRenderTarget(target);}
+  }
+  balanceCamera(candidate){
+    for(let fov=candidate.fov;fov<=65;fov=Math.min(65,fov+5)){
+      let c={...candidate,fov};let center;
+      for(let i=0;i<4;i++){center=this.visualCenter(c);if(!center)break;if(isCentered(center))break;c=centeredShift(c,center);}
+      center=this.visualCenter(c);const frame=this.inspectFrame(c);
+      if(isCentered(center)&&frame.fits&&!frame.blocked)return {...c,visualBalance:{...center,method:'silhouette_centroid',tolerance:.015}};
+      if(fov===65)break;
+    }
+    return null;
+  }
   render(c,pass='rgb',width=0){
     this.setCamera(c);const w=width||Math.max(320,Math.round(this.host.clientWidth*Math.min(devicePixelRatio,2)));this.renderer.setSize(w,Math.round(w/ASPECT),false);
     const originals=[];const bg=this.scene.background,tone=this.renderer.toneMapping,colorSpace=this.renderer.outputColorSpace;
@@ -80,5 +105,5 @@ export class RoomScene{
     }finally{for(const[o,mat]of originals)o.material=mat;this.scene.background=bg;this.renderer.toneMapping=tone;this.renderer.outputColorSpace=colorSpace;}
   }
   capture(c,pass='rgb',width=FRAME_WIDTH){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
-  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,verticalShiftFraction:leveled.shiftY,viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
+  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,horizontalShiftFraction:leveled.shiftX||0,verticalShiftFraction:leveled.shiftY,visualBalance:c.visualBalance,viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
 }

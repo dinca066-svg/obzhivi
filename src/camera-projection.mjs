@@ -7,7 +7,7 @@ export function applyLevelCamera(camera,controls){
   camera.position.set(c.x/1000,c.height/1000,c.z/1000);
   camera.up.set(0,1,0);camera.fov=c.fov;camera.aspect=ASPECT;
   camera.lookAt(...cameraTarget(c));
-  camera.setViewOffset(FRAME_WIDTH,FRAME_HEIGHT,0,c.shiftY*FRAME_HEIGHT,FRAME_WIDTH,FRAME_HEIGHT);
+  camera.setViewOffset(FRAME_WIDTH,FRAME_HEIGHT,(c.shiftX||0)*FRAME_WIDTH,c.shiftY*FRAME_HEIGHT,FRAME_WIDTH,FRAME_HEIGHT);
   camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
   return c;
 }

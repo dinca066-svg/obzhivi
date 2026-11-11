@@ -1,7 +1,7 @@
 import { cameraError,aimAt } from './scene-core.mjs';
 import { footprint } from './placement-core.mjs';
 
-export const COMPOSITION_VERSION=3;
+export const COMPOSITION_VERSION=4;
 export const SHOTS=[
   {id:'front',name:'Фронтально на изголовье',description:'По оси кровати, симметрично изножью.'},
   {id:'left',name:'Из левого угла',description:'Диагональ со стороны изножья слева.'},
@@ -26,7 +26,7 @@ export function compositionError(c,type,room,p,product,h,inspect){
   if(!m.fits)return 'Кровать обрезается краем кадра. Отодвиньте камеру, измените угол обзора или смещение кадра.';
   return '';
 }
-export function proposeCompositions(room,p,product,h,inspect){
+export function proposeCompositions(room,p,product,h,inspect,balance=c=>c){
   const axes=bedAxes(p),size=footprint(product),margin=220;
   const frontPositions=[];
   // Sample only the longitudinal axis. Never substitute a diagonal for a frontal shot.
@@ -46,7 +46,7 @@ export function proposeCompositions(room,p,product,h,inspect){
         if(compositionError(c,shot.id,room,p,product,h,inspect))continue;
         const m=inspect(c),rel=relativeCamera(c,p),angle=Math.abs(Math.atan2(rel.side,rel.forward)*180/Math.PI);
         const score=Math.abs(fov-45)*.025+Math.abs(height-1400)*.001+Math.abs(m.width-.62)*3+(shot.id==='front'?0:Math.abs(angle-40)*.012);
-        if(score<bestScore){best={...c,composition:shot.id};bestScore=score;}
+        if(score<bestScore){const balanced=balance({...c,composition:shot.id});if(balanced&&!compositionError(balanced,shot.id,room,p,product,h,inspect)){best=balanced;bestScore=score;}}
       }
     }
     return {camera:best,reason:best?'':(shot.id==='front'?'Перед изножьем недостаточно места для полного фронтального кадра.':'В этом углу не получается показать кровать целиком без перекрытия.')};

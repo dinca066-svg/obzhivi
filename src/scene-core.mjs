@@ -33,7 +33,7 @@ export function cameraError(c,room,placement,product,h){
   if(!c||![c.x,c.z,c.height,c.yaw,c.pitch,c.fov].every(Number.isFinite))return 'Укажите все параметры камеры.';
   if(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180)return 'Передвиньте камеру внутрь комнаты, минимум на 18 см от стены.';
   if(c.height<800||c.height>Math.min(2200,h.ceiling-200))return 'Камера должна быть на высоте от 80 см до 220 см и ниже потолка.';
-  if(c.fov<35||c.fov>75||c.pitch!==0||(c.roll??0)!==0||!Number.isFinite(c.shiftY??0)||Math.abs(c.shiftY??0)>.35)return 'Угол обзора: 35–75°. Горизонт закреплён; смещение кадра — до 35%.';
+  if(c.fov<35||c.fov>75||c.pitch!==0||(c.roll??0)!==0||!['shiftX','shiftY'].every(k=>Number.isFinite(c[k]??0)&&Math.abs(c[k]??0)<=.35))return 'Угол обзора: 35–75°. Горизонт закреплён; смещение кадра — до 35%.';
   const b=boundsOf(placement,footprint(product));
   if(c.x>b.left-120&&c.x<b.right+120&&c.z>b.top-120&&c.z<b.bottom+120)return 'Камера попала в зону кровати. Передвиньте её на свободное место.';
   const dg=doorGeometry(room),a=dg.hinge,bp=dg.closed,dx=bp.x-a.x,dz=bp.z-a.z;

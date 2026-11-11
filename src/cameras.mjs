@@ -10,6 +10,8 @@ const $=id=>document.getElementById(id),shotNames=SHOTS.map(s=>s.name);
 // A cached previous HTML shell can briefly receive the current bundle during publication.
 // Upgrade the small markup addition in place instead of failing the entire room.
 if(!$('composition-status')){const status=document.createElement('p');status.id='composition-status';status.className='hint';status.setAttribute('role','status');$('shot-list').before(status);}
+$('cam-shift').closest('.range-label').hidden=true;$('aim-bed').textContent='Сбалансировать кадр';
+if(!$('balance-note')){const note=document.createElement('p');note.id='balance-note';note.className='hint';note.textContent='Кровать автоматически размещается в визуальном центре кадра. Горизонт и вертикали закреплены.';$('aim-bed').before(note);}
 $('cam-fov').max='65';document.querySelector('.preview-size').textContent='3:4';$('export-status').textContent='Кадры сохраняются в разрешении 1200 × 1600.';
 const demo={id:'demo-bed',name:'Учебная кровать',manufacturer:'Пример',sku:'DEMO-BED',category:'bed',demo:true,dimensionsMm:{width:1800,depth:2200,height:1100}};
 let room,placement,product,layout,signature,view,cameras=[],outcomes=[],active=0,heights={...DEFAULT_HEIGHTS},pass='rgb',ready=false,stale=false,drag=null,thumbnailTimer,storageOK=true,busy=false,geometryDirty=false;
@@ -26,14 +28,16 @@ function scheduleThumbnails(){clearTimeout(thumbnailTimer);thumbnailTimer=setTim
 function editCamera(candidate,{syncInputs=false}={}){
   if(!ready||busy||!cameras[active])return false;
   if(active===0){const axis=bedAxes(placement).front,distance=(candidate.x-placement.x)*axis.x+(candidate.z-placement.z)*axis.z;candidate={...candidate,x:placement.x+axis.x*distance,z:placement.z+axis.z*distance,yaw:cameras[active].yaw};}
-  const error=compositionError(candidate,SHOTS[active].id,room,placement,product,heights,c=>view.inspectFrame(c));
+  const basic=cameraError(candidate,room,placement,product,heights);if(basic){$('camera-error').textContent=basic;$('camera-error').hidden=false;if(syncInputs)fillCameraInputs();return false;}
+  const balanced=view.balanceCamera(candidate);
+  const error=balanced?compositionError(balanced,SHOTS[active].id,room,placement,product,heights,c=>view.inspectFrame(c)):'В этой точке нельзя расположить кровать в центре целиком. Отодвиньте камеру.';
   if(error){$('camera-error').textContent=error;$('camera-error').hidden=false;if(syncInputs)fillCameraInputs();return false;}
-  cameras[active]=candidate;if(syncInputs)fillCameraInputs();render();save();scheduleThumbnails();return true;
+  cameras[active]=balanced;if(syncInputs)fillCameraInputs();$('cam-fov').value=balanced.fov;$('fov-value').textContent=Math.round(balanced.fov)+'°';render();save();scheduleThumbnails();return true;
 }
 function choose(index){if(!ready||busy||!cameras[index])return;active=index;fillCameraInputs();render();save();}
 function createShotCards(){const host=$('shot-list');host.replaceChildren();for(let i=0;i<SHOTS.length;i++){const button=document.createElement('button');button.className='shot-card';button.disabled=!cameras[i];button.setAttribute('aria-label',shotNames[i]);button.innerHTML=(cameras[i]?`<img id="shot-image-${i}" alt="3D-предпросмотр: ${shotNames[i]}">`:`<div class="unavailable-shot">Ракурс недоступен</div>`)+`<div class="shot-copy"><span>0${i+1}</span><strong>${shotNames[i]}</strong><i aria-hidden="true"></i></div>`;const reason=document.createElement('p');reason.className='shot-reason';reason.textContent=cameras[i]?SHOTS[i].description:outcomes[i].reason;button.append(reason);button.onclick=()=>choose(i);host.append(button);}
 $('composition-status').textContent=`Доступно ракурсов: ${cameras.filter(Boolean).length} из 3. Дверь закрыта во всех кадрах.`;}
-function proposeCameras(){outcomes=proposeCompositions(room,placement,product,heights,c=>view.inspectFrame(c));cameras=outcomes.map(o=>o.camera);active=Math.max(0,cameras.findIndex(Boolean));createShotCards();}
+function proposeCameras(){outcomes=proposeCompositions(room,placement,product,heights,c=>view.inspectFrame(c),c=>view.balanceCamera(c));cameras=outcomes.map(o=>o.camera);active=Math.max(0,cameras.findIndex(Boolean));createShotCards();}
 function drawMap(){
   const w=room.width,d=room.depth,s=footprint(product);$('camera-map').setAttribute('viewBox',`-200 -200 ${w+400} ${d+400}`);
   const dg=doorGeometry(room),p=p=>`${p.x},${p.z}`,windows=openingsFor(room,heights).filter(o=>o.kind==='window');
@@ -47,7 +51,7 @@ map.addEventListener('pointermove',event=>{if(!drag||drag.id!==event.pointerId)r
 for(const name of ['pointerup','pointercancel'])map.addEventListener(name,event=>{if(drag?.id===event.pointerId){drag=null;if(map.hasPointerCapture(event.pointerId))map.releasePointerCapture(event.pointerId);}});
 map.addEventListener('keydown',event=>{const target=event.target.closest('[data-camera]');if(!target)return;const i=Number(target.dataset.camera);if(['Enter',' '].includes(event.key)){event.preventDefault();choose(i);return;}const delta={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(delta){event.preventDefault();active=i;editCamera({...cameras[i],x:cameras[i].x+delta[0],z:cameras[i].z+delta[1]},{syncInputs:true});map.querySelector(`[data-camera="${i}"]`).focus();}});
 for(const[id,k,factor]of[['cam-x','x',10],['cam-z','z',10],['cam-height','height',10],['cam-yaw','yaw',1]]){ $(id).addEventListener('input',()=>{if(!ready)return;const n=$(id).value===''?NaN:Number($(id).value)*factor;editCamera({...cameras[active],[k]:n});}); $(id).addEventListener('blur',()=>{if(ready){fillCameraInputs();render();}}); }
-for(const[id,k]of[['cam-fov','fov'],['cam-shift','shiftY']])$(id).addEventListener('input',()=>editCamera({...cameras[active],[k]:Number($(id).value)*(k==='shiftY'?.01:1)},{syncInputs:true}));
+for(const[id,k]of[['cam-fov','fov']])$(id).addEventListener('input',()=>editCamera({...cameras[active],[k]:Number($(id).value)*(k==='shiftY'?.01:1)},{syncInputs:true}));
 $('aim-bed').onclick=()=>{if(!ready||busy||!cameras[active])return;const c=aimAt(cameras[active],placement.x,placement.z,Math.min(950,product.dimensionsMm.height*.7));editCamera(c,{syncInputs:true});};
 $('reset-cameras').onclick=()=>{if(!ready||busy)return;try{proposeCameras();fillCameraInputs();render();save();updateThumbnails();}catch(e){notice(e.message,true);}};
 document.querySelectorAll('[data-pass]').forEach(button=>button.onclick=()=>{pass=button.dataset.pass;document.querySelectorAll('[data-pass]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));$('pass-description').textContent={rgb:'Нейтральная отделка и ваша мебель. Дизайн ещё не сгенерирован.',depth:'Карта глубины: светлое ближе к камере, тёмное дальше. Для генератора с поддержкой глубины.',masks:'Каждый цвет — отдельная поверхность или предмет. Мебель и проёмы можно выделять отдельно.'}[pass];render();});
@@ -91,7 +95,7 @@ async function init(){
     for(const k of Object.keys(DEFAULT_HEIGHTS))$('height-'+k).value=heights[k];
     $('camera-workbench').hidden=false;view=new RoomScene($('scene-viewport'));view.buildRoom(room,heights);await view.loadBed(product,placement);
     proposeCameras();
-    if(same&&stored.rulesVersion===COMPOSITION_VERSION&&Array.isArray(stored.cameras)&&stored.cameras.length===SHOTS.length){for(let i=0;i<SHOTS.length;i++){const c=stored.cameras[i];if(c&&!compositionError(c,SHOTS[i].id,room,placement,product,heights,c=>view.inspectFrame(c)))cameras[i]=c;}if(cameras[stored.active])active=stored.active;}
+    if(same&&stored.rulesVersion===COMPOSITION_VERSION&&Array.isArray(stored.cameras)&&stored.cameras.length===SHOTS.length){for(let i=0;i<SHOTS.length;i++){const c=stored.cameras[i],balanced=c?view.balanceCamera(c):null;if(balanced&&!compositionError(balanced,SHOTS[i].id,room,placement,product,heights,c=>view.inspectFrame(c)))cameras[i]=balanced;}if(cameras[stored.active])active=stored.active;}
     createShotCards();ready=true;fillCameraInputs();updateThumbnails();save();
     const host=$('scene-product'),photo=productPhoto(product);if(photo){const img=document.createElement('img');img.src=photo.src;img.alt='Фото '+product.name;host.append(img);}const title=document.createElement('p');title.className='product-name';title.textContent=product.name;host.append(title);const url=safeProductUrl(product.productUrl);if(url){const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.className='seller-link';a.textContent='Посмотреть у продавца ↗';host.append(a);}
     notice((product.demo?'Сейчас в кадре учебная кровать. ':'')+'Комната собрана по сохранённому плану. Высоты и положение окон предварительные; их нужно уточнить перед финальным дизайном.'+(stored&&!same?' Расстановка обновилась — камеры подобраны заново.':''));
