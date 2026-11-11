@@ -1,7 +1,8 @@
+import {architectureError} from './architecture-frame.mjs';
 import { cameraError,aimAt } from './scene-core.mjs';
 import { footprint } from './placement-core.mjs';
 
-export const COMPOSITION_VERSION=5;
+export const COMPOSITION_VERSION=6;
 export const SHOTS=[
   {id:'front',name:'Фронтально на изголовье',description:'По оси кровати, симметрично изножью.'},
   {id:'left',name:'Из левого угла',description:'Диагональ со стороны изножья слева.'},
@@ -11,6 +12,7 @@ export function bedAxes(placement){const a=placement.rotation*Math.PI/180;return
 export function relativeCamera(c,p){const a=bedAxes(p),dx=c.x-p.x,dz=c.z-p.z;return {forward:dx*a.front.x+dz*a.front.z,side:dx*a.right.x+dz*a.right.z};}
 export function compositionError(c,type,room,p,product,h,inspect){
   const error=cameraError(c,room,p,product,h);if(error)return error;
+  if(type==='architecture'){const m=inspect(c);return m.blocked?'Камера попала внутрь мебели или за стену.':architectureError(m.architecture);}
   if(c.fov>65)return 'Для интерьерного кадра угол обзора ограничен 65°.';
   const rel=relativeCamera(c,p);
   if(rel.forward<=footprint(product).depth/2+120)return 'Камера должна быть со стороны изножья кровати.';

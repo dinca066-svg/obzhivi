@@ -2,7 +2,7 @@
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#20271b"><title>Обживи — ракурсы комнаты</title><link rel="stylesheet" href="/assets/styles.css"><link rel="stylesheet" href="/assets/cameras.css"></head>
 <body><header class="top"><a class="brand" href="/planner.html">Обживи<span>Ваша спальня</span></a><a class="back-link" href="/planner.html">← К расстановке</a></header>
 <main><nav class="camera-journey" aria-label="Этапы проекта"><a href="/planner.html">01 · Расстановка</a><strong aria-current="step">02 · Ракурсы комнаты</strong><span>03 · Дизайн</span></nav>
-<div class="intro"><div><h1>Посмотрим на вашу комнату</h1><p>Выберите ракурс и настройте кадр, который станет основой дизайна.</p></div><span class="chip warning">Предварительные размеры</span></div>
+<div class="intro"><div><h1>Посмотрим на вашу комнату</h1><p>Основной кадр показывает две стены и дверь. Остальные ракурсы дополняют его деталями мебели.</p></div><span class="chip warning">Предварительные размеры</span></div>
 <div id="page-notice" class="page-notice" role="status" aria-live="polite">Открываем сохранённую расстановку…</div>
 <section id="empty-state" class="empty-state" hidden><h2>Сначала поставьте кровать</h2><p id="empty-reason">Сохраните расстановку на плане — она появится здесь в 3D.</p><a class="button-link primary" href="/planner.html">Открыть план комнаты →</a></section>
 <div id="camera-workbench" class="camera-workbench" hidden>
@@ -13,10 +13,10 @@
       <p id="pass-description" class="frame-description">Нейтральная отделка и ваша мебель. Дизайн ещё не сгенерирован.</p>
     </div>
     <p id="composition-status" class="hint" role="status"></p><div id="shot-list" class="shot-list" aria-label="Выберите ракурс"></div>
-    <div class="export-panel"><div><h2>Исходные кадры для дизайна</h2><p>Все доступные ракурсы, глубина, маски объектов и параметры сцены в одном ZIP.</p></div><button id="export-shots" class="primary" disabled>Подготовить кадры ↓</button><p id="export-status" class="hint" aria-live="polite">Кадры сохраняются в разрешении 1200 × 1600.</p></div>
+    <div class="export-panel"><div><h2>Исходные кадры для дизайна</h2><p>Основной кадр со стенами и дверью, дополнительные ракурсы, глубина и маски в одном ZIP.</p></div><button id="export-shots" class="primary" disabled>Подготовить кадры ↓</button><p id="export-status" class="hint" aria-live="polite">Кадры сохраняются в разрешении 1200 × 1600.</p></div>
   </section>
   <aside class="camera-sidebar">
-    <section class="camera-card"><div class="card-heading"><h2>Камера на плане</h2><button id="reset-cameras" class="text-button">Подобрать заново</button></div><p class="hint">Камеры привязаны к кровати. Фронтальная движется по её оси; диагонали остаются с выбранной стороны.</p>
+    <section class="camera-card"><div class="card-heading"><h2>Камера на плане</h2><button id="reset-cameras" class="text-button">Подобрать заново</button></div><p class="hint">Основная камера охватывает мебель и дверь. Фронтальный и угловые кадры привязаны к кровати.</p>
       <svg id="camera-map" role="group" aria-label="План комнаты с камерами" viewBox="-150 -150 3350 5805"><g id="map-architecture"></g><g id="map-bed"></g><g id="map-cameras"></g></svg>
       <div class="camera-fields"><label>От левой стены, см<input id="cam-x" type="number" step="5"></label><label>От верхней стены, см<input id="cam-z" type="number" step="5"></label><label>Высота камеры, см<input id="cam-height" type="number" min="80" max="220" step="5"></label><label>Направление, °<input id="cam-yaw" type="number" min="-360" max="360" step="5"></label></div>
       <label class="range-label">Угол обзора <output id="fov-value">60°</output><input id="cam-fov" type="range" min="35" max="65" step="1" value="60"></label>

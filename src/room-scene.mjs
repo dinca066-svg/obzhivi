@@ -1,3 +1,4 @@
+import {projectedGroup,cornerInFrame,polygonArea,architectureError} from './architecture-frame.mjs';
 import {productBuffer} from './bundled-products.mjs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -35,6 +36,7 @@ export class RoomScene{
   }
   box(parent,size,position,color,mask){const material=new THREE.MeshStandardMaterial({color,roughness:.85,metalness:0});const mesh=new THREE.Mesh(new THREE.BoxGeometry(...size),material);mesh.position.set(...position);mesh.userData.mask=mask;mesh.receiveShadow=mask==='floor';parent.add(mesh);return mesh;}
   buildRoom(room,h){
+    this.room=room;this.heights=h;
     this.architecture.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});this.architecture.clear();
     const w=room.width/1000,d=room.depth/1000,H=h.ceiling/1000;
     this.keyLight.target.position.set(w/2,0,d/2);this.camera.far=Math.ceil(Math.hypot(w,d,H)+1);this.depthUniforms.captureFar.value=this.camera.far;
@@ -53,7 +55,19 @@ export class RoomScene{
       }
     }
     const dg=doorGeometry(room),dx=dg.closed.x-dg.hinge.x,dz=dg.closed.z-dg.hinge.z;
-    const leaf=this.box(this.architecture,[.04,h.door/1000,room.doorWidth/1000],[(dg.closed.x+dg.hinge.x)/2000,h.door/2000,(dg.closed.z+dg.hinge.z)/2000],'#d6c7ae','door');leaf.rotation.y=Math.atan2(dx,dz);leaf.userData.doorState='closed';this.scene.updateMatrixWorld(true);
+    const leaf=this.box(this.architecture,[.04,h.door/1000,room.doorWidth/1000],[(dg.closed.x+dg.hinge.x)/2000,h.door/2000,(dg.closed.z+dg.hinge.z)/2000],'#d6c7ae','door');leaf.rotation.y=Math.atan2(dx,dz);leaf.userData.doorState='closed';
+    const horizontal=['top','bottom'].includes(room.doorWall),o=room.doorOffset/1000,D=room.doorWidth/1000,Hd=h.door/1000;
+    const part=(u,y,v,width,height,depth,color,role)=>{const p=dg.map(u*1000,v*1000);const m=this.box(this.architecture,horizontal?[width,height,depth]:[depth,height,width],[p.x/1000,y,p.z/1000],color,'door');m.userData.doorPart=role;return m;};
+    leaf.material.color.set('#b89c7b');
+    // All details are on the room side of the closed leaf, regardless of hinge/swing.
+    for(const u of [o-.025,o+D+.025])part(u,Hd/2+.035,.035,.07,Hd+.07,.055,'#e4dbcc','jamb');
+    part(o+D/2,Hd+.035,.035,D+.12,.07,.055,'#e4dbcc','lintel');
+    for(const y of [Hd*.32,Hd*.73])part(o+D/2,y,.023,D*.73,Hd*.27,.014,'#a98e70','panel');
+    const handleU=room.doorHinge==='end'?o+.12:o+D-.12;
+    part(handleU,1.02,.055,.045,.12,.065,'#34342f','handle-base');
+    part(handleU+(room.doorHinge==='end'?.045:-.045),1.04,.1,.13,.025,.025,'#34342f','handle');
+    this.scene.updateMatrixWorld(true);this.doorBounds=new THREE.Box3();this.architecture.children.filter(m=>m.userData.mask==='door').forEach(m=>this.doorBounds.union(new THREE.Box3().setFromObject(m,true)));
+    this.doorCorners=[[o,0],[o+D,0],[o+D,Hd],[o,Hd]].map(([u,y])=>{const p=dg.map(u*1000,25);return new THREE.Vector3(p.x/1000,y,p.z/1000);});
   }
   async loadBed(product,placement){return this.loadFurniture(product,placement,'bed');}
   async loadFurniture(product,placement,mask){
@@ -78,7 +92,7 @@ export class RoomScene{
   inspectFrame(c){
     this.setCamera(c);const main=frameMetrics(this.camera,this.bedBounds,this.architecture.children),all=[main,...this.furniture.map(f=>frameMetrics(this.camera,f.bounds,this.architecture.children))];
     const inside=this.furniture.some(f=>{const b=f.bounds;return this.camera.position.x>b.min.x-.12&&this.camera.position.x<b.max.x+.12&&this.camera.position.z>b.min.z-.12&&this.camera.position.z<b.max.z+.12;});
-    return {...main,fits:all.every(m=>m.fits),blocked:inside||all.some(m=>m.blocked),minX:Math.min(...all.map(m=>m.minX)),maxX:Math.max(...all.map(m=>m.maxX)),minY:Math.min(...all.map(m=>m.minY)),maxY:Math.max(...all.map(m=>m.maxY))};
+    return {...main,...(c.composition==='architecture'?{architecture:this.architectureContext(c)}:{}),fits:all.every(m=>m.fits),blocked:inside||all.some(m=>m.blocked),minX:Math.min(...all.map(m=>m.minX)),maxX:Math.max(...all.map(m=>m.maxX)),minY:Math.min(...all.map(m=>m.minY)),maxY:Math.max(...all.map(m=>m.maxY))};
   }
   maskPalette(){return {...MASKS,...Object.fromEntries(this.furniture.map(f=>[f.mask,'#'+this.maskMaterials[f.mask].color.getHexString()]))};}
   visualCenter(c,onlyMask=null){
@@ -92,7 +106,22 @@ export class RoomScene{
     }finally{for(const[o,m]of originals)o.material=m;this.scene.background=background;this.renderer.shadowMap.enabled=shadows;this.renderer.setRenderTarget(target);}
   }
   furnitureVisibility(c){return this.furniture.map(f=>({instanceId:f.placement.id,visibleAreaFraction:this.visualCenter(c,f.mask)?.area||0}));}
+  architectureContext(c){
+    this.setCamera(c);const frames=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds),this.doorBounds]);
+    const projectedDoorArea=polygonArea(this.doorCorners.map(p=>p.clone().project(this.camera)));
+    const doorArea=this.visualCenter(c,'door')?.area||0;
+    const walls=Object.fromEntries(['wallLeft','wallRight','wallTop','wallBottom'].map(id=>[id,this.visualCenter(c,id)?.area||0]));
+    this.setCamera(c);return {...frames,doorArea,doorVisibleRatio:Math.min(1,doorArea/Math.max(projectedDoorArea,1e-9)),wallAreas:walls,corners:cornerInFrame(this.camera,this.room,this.heights,walls),doorState:'closed'};
+  }
+  balanceArchitectureCamera(candidate){
+    this.setCamera(candidate);const m=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds),this.doorBounds]);
+    const c={...candidate,shiftX:(candidate.shiftX||0)+(m.minX+m.maxX)/4,shiftY:(candidate.shiftY||0)-(m.minY+m.maxY)/4};
+    if(Math.abs(c.shiftX)>.35||Math.abs(c.shiftY)>.35)return null;
+    const context=this.architectureContext(c);if(architectureError(context))return null;
+    return {...c,architectureContext:context,visualBalance:{method:'furniture_and_door_bounds',x:.5,y:.5}};
+  }
   balanceCamera(candidate){
+    if(candidate.composition==='architecture')return this.balanceArchitectureCamera(candidate);
     for(let fov=candidate.fov;fov<=65;fov=Math.min(65,fov+5)){
       let c={...candidate,fov};let center;
       for(let i=0;i<4;i++){center=this.visualCenter(c);if(!center)break;if(isCentered(center))break;c=centeredShift(c,center);}
@@ -115,5 +144,5 @@ export class RoomScene{
     }finally{for(const[o,mat]of originals)o.material=mat;this.scene.background=bg;this.renderer.toneMapping=tone;this.renderer.outputColorSpace=colorSpace;}
   }
   capture(c,pass='rgb',width=FRAME_WIDTH){this.render(c,pass,width);return this.renderer.domElement.toDataURL('image/png');}
-  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,horizontalShiftFraction:leveled.shiftX||0,verticalShiftFraction:leveled.shiftY,visualBalance:c.visualBalance,furnitureVisibility:this.furnitureVisibility(c),viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
+  cameraMetadata(c){const leveled=this.setCamera(c);return {horizonLocked:true,pitchDegrees:0,rollDegrees:0,horizontalShiftFraction:leveled.shiftX||0,verticalShiftFraction:leveled.shiftY,visualBalance:c.visualBalance,architectureContext:c.composition==='architecture'?this.architectureContext(c):null,furnitureVisibility:this.furnitureVisibility(c),viewOffset:{...this.camera.view},positionMeters:this.camera.position.toArray(),quaternion:this.camera.quaternion.toArray(),targetMeters:cameraTarget(c),verticalFovDegrees:c.fov,aspect:ASPECT,nearMeters:this.camera.near,farMeters:this.camera.far,projectionMatrix:this.camera.projectionMatrix.toArray()};}
 }
