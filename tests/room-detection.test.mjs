@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {detectRoomRegions,rescaleRegions} from '../src/room-detection.mjs';
+function plan(){const width=400,height=300,data=new Uint8ClampedArray(width*height*4).fill(255);return {data,width,height};}
+function line(p,x,y,w,h){for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++){const n=(j*p.width+i)*4;p.data[n]=p.data[n+1]=p.data[n+2]=30;}}
+function room(p,x,y,w,h){line(p,x,y,w,4);line(p,x,y+h-4,w,4);line(p,x,y,4,h);line(p,x+w-4,y,4,h);}
+test('finds enclosed rooms and bridges doorway gaps without labeling purpose or guessing area',()=>{const p=plan();room(p,20,20,140,200);room(p,160,20,180,200);for(let y=140;y<165;y++)for(let x=160;x<164;x++){const i=(y*p.width+x)*4;p.data[i]=p.data[i+1]=p.data[i+2]=255;}const found=detectRoomRegions(p);assert.equal(found.length,2);assert.ok(found.every(r=>r.verified===false&&!('area'in r)&&!('purpose'in r)));assert.equal(found[0].x,24);});
+test('blank image, open outlines and irregular L-shaped room do not yield a fake bedroom',()=>{assert.deepEqual(detectRoomRegions(plan()),[]);const open=plan();line(open,20,20,140,4);line(open,20,20,4,200);assert.deepEqual(detectRoomRegions(open),[]);const l=plan();line(l,20,20,260,4);line(l,20,20,4,240);line(l,20,256,120,4);line(l,136,140,4,120);line(l,136,140,144,4);line(l,276,20,4,124);assert.deepEqual(detectRoomRegions(l),[]);});
+test('detected pixel bounds rescale to source coordinates without introducing physical dimensions',()=>{const [r]=rescaleRegions([{x:10,y:20,width:30,height:40}],{width:100,height:100},{width:200,height:300});assert.deepEqual(r,{id:'region-0',x:20,y:60,width:60,height:120});});

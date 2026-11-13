@@ -1,16 +1,86 @@
+import {detectRoomRegions,rescaleRegions} from './room-detection.mjs';
 import {PLAN_KEY,dimensionsFromPlan,planGeometryError} from './plan-core.mjs';
 import {DEFAULT_HEIGHTS,openingsFor} from './scene-core.mjs';
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 let stage=1,image=null,rect=null,windows=[],pdf=null,page=1,ticket=0,drag=null,first=null,room=null,geometryError='',sample=false;
+let regions=[],selectedRegionId=null,selectionMode='regions',detecting=false;
 const number=id=>Number($(id).value),wallOptions='<option value="left">Левая</option><option value="right">Правая</option><option value="top">Верхняя</option><option value="bottom">Нижняя</option>';
 const say=t=>{$('message').textContent=t;};
-function showStage(n){stage=n;$('upload-panel').hidden=n!==1;$('room-panel').hidden=n!==2;$('geometry-panel').hidden=n!==3;$('crop-tools').hidden=n!==2;$('sample-rooms').hidden=!sample||n!==2;$('plan-title').textContent=n===3?'Проверьте проёмы на плане':'План квартиры';$('plan-hint').textContent=n===3?'Зелёный контур — комната. Синий — окна, охра — дверь.':image?'Выделите только одну прямоугольную комнату по внутреннему краю стен.':'Файл обрабатывается в этом браузере.';draw();}
+function showStage(n){
+ stage=n;$('upload-panel').hidden=n!==1;$('room-panel').hidden=n!==2;$('geometry-panel').hidden=n!==3;
+ $('plan-title').textContent=n===3?'Проверьте проёмы на плане':'План квартиры';
+ $('stage-title').textContent=n===1?'Сначала — ваша планировка':n===2?'Какая комната станет спальней?':'Проверьте размеры спальни';
+ $('stage-description').textContent=n===1?'Загрузите план, выберите спальню и проверьте размеры. Мы соберём комнату для примерки настоящей мебели.':n===2?'Нажмите на комнату на плане. На следующем шаге уточним размеры, дверь и окна.':'Уточните масштаб, дверь и окна — по этим данным мы соберём вашу 3D-комнату.';
+ $('step-label').textContent=n===1?'01 · Загрузка плана':n===2?'01 · Выбор спальни':'01 · Размеры и проёмы';
+ $('plan-hint').textContent=n===3?'Зелёный контур — спальня. Синий — окна, охра — дверь.':image?'Перед сборкой комнаты проверьте границы по внутреннему краю стен.':'Файл обрабатывается в этом браузере.';
+ draw();
+}
+function sampleRegions(){return [{id:'central',x:533,y:66,width:287,height:277,area:10.68,sampleKey:'central',source:'example',verified:false},{id:'right',x:833,y:66,width:255,height:461,area:16.79,sampleKey:'right',source:'example',verified:false}];}
+function buildRegions(){
+ const layer=$('room-regions'),list=$('room-options');layer.replaceChildren();list.replaceChildren();
+ regions.forEach((r,i)=>{
+  const g=document.createElementNS(NS,'g');g.dataset.region=r.id;g.classList.add('room-region','region-color-'+i%4);g.setAttribute('role','button');g.setAttribute('tabindex','0');g.setAttribute('aria-label',`Выбрать комнату ${i+1} как спальню${r.area?' · '+r.area.toLocaleString('ru-RU')+' м²':''}`);
+  const size=Math.max(22,image.width/35),cx=r.x+r.width/2,cy=r.y+Math.min(r.height*.24,size*1.8);
+  g.innerHTML=`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}"/><circle cx="${cx}" cy="${cy}" r="${size/2}"/><text x="${cx}" y="${cy}" font-size="${size*.52}" dominant-baseline="central" text-anchor="middle">${i+1}</text><path class="region-check" d="M${cx-size*.25} ${cy}l${size*.16} ${size*.17} ${size*.34} ${-size*.35}"/>`;
+  g.addEventListener('click',()=>chooseRegion(r.id));g.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();chooseRegion(r.id);}});
+  layer.append(g);
+  const button=document.createElement('button');button.type='button';button.className='room-option region-color-'+i%4;button.dataset.region=r.id;button.setAttribute('aria-pressed','false');
+  const swatch=document.createElement('span');swatch.className='room-swatch';swatch.textContent=i+1;const label=document.createElement('span');label.textContent='Комната '+(i+1)+(r.area?' · '+r.area.toLocaleString('ru-RU')+' м²':'');button.append(swatch,label);button.onclick=()=>chooseRegion(r.id);
+  for(const [event,on] of [['pointerenter',true],['pointerleave',false],['focus',true],['blur',false]])button.addEventListener(event,()=>g.classList.toggle('is-hovered',on));list.append(button);
+ });
+}
+function chooseRegion(id){
+ if(stage!==2||selectionMode!=='regions'||detecting)return;
+ const r=regions.find(r=>r.id===id);if(!r||selectedRegionId===id&&rect)return;
+ initGeometry();first=null;selectedRegionId=id;
+ if(r.sampleKey)chooseSample(r.sampleKey);else{rect={x:r.x,y:r.y,width:r.width,height:r.height};invalidate();}
+ say('Спальня выбрана. Можно выбрать другую комнату или перейти к проверке размеров.');draw();
+}
+function updateSelection(){
+ const manual=selectionMode==='manual',valid=rect&&rect.width>=5&&rect.height>=5,selected=regions.find(r=>r.id===selectedRegionId),index=regions.indexOf(selected);
+ $('source-plan').classList.toggle('manual-mode',stage===2&&manual);$('source-plan').setAttribute('aria-label',stage===3?'План спальни с дверью и окнами':manual?'План квартиры: укажите два противоположных угла спальни':'План квартиры: выберите спальню');
+ const showRegions=stage===2&&!manual;$('room-regions').style.display=showRegions?'':'none';$('room-regions').setAttribute('aria-hidden',String(!showRegions));for(const n of $('room-regions').children)n.setAttribute('tabindex',showRegions?'0':'-1');$('room-options').hidden=stage!==2||manual||!regions.length;
+ for(const node of document.querySelectorAll('[data-region]')){const on=node.dataset.region===selectedRegionId;node.setAttribute('aria-pressed',String(on));node.classList.toggle('is-selected',on);node.classList.toggle('is-muted',!!selectedRegionId&&!on);}
+ $('crop-tools').hidden=stage!==2||!manual;$('reset-selection').hidden=!valid&&!first;$('back-regions').hidden=!regions.length;
+ $('selection-instruction').hidden=stage!==2;
+ $('selection-instruction').textContent=detecting?'Ищем границы комнат на плане…':manual?(first?'Первый угол отмечен. Теперь нажмите противоположный угол.':valid?'Границы спальни выделены. Потяните за угол, чтобы поправить их.':'Нажмите на два противоположных внутренних угла спальни.'):regions.length?'Нажмите на выделенную комнату, которая станет спальней.':'Не удалось уверенно найти комнаты. Укажите спальню вручную.';
+ $('selection-title').textContent=valid?'Спальня выбрана':manual?'Укажите границы спальни':detecting?'Определяем границы комнат':'Выберите спальню на плане';
+ $('selection-description').textContent=valid?'Выбор сохранён на этом шаге. Проверьте, что выделена нужная комната.':manual?'Отметьте два угла на плане или задайте границы числами под изображением.':detecting?'Это займёт немного времени. План обрабатывается в вашем браузере.':regions.length?'Нажмите на цветную область или выберите комнату из списка под планом.':'На этом изображении границы недостаточно чёткие. Можно выделить прямоугольную комнату самостоятельно.';
+ $('selected-room').hidden=!valid;$('selected-room-name').textContent=selected?'Комната '+(index+1)+' · спальня':'Спальня · свои границы';
+ $('selected-room-area').textContent=selected?.area?selected.area.toLocaleString('ru-RU')+' м² · площадь с примера':number('area')>0&&$('scale-mode').value==='area'?number('area').toLocaleString('ru-RU')+' м² · указано вами':'Площадь укажем на следующем шаге';
+ $('selection-status').textContent=detecting?'':manual?'Укажите прямоугольную спальню по внутренним границам стен.':sample?'На примере подсвечены две заранее размеченные комнаты.':regions.length?'Предварительное выделение по линиям плана. Проверьте границы.':'Сейчас поддерживаются прямоугольные комнаты.';
+ $('continue-hint').textContent=valid?'Дальше уточним площадь, расположение двери и окон.':manual?'Кнопка станет доступна после выделения двух углов.':'Сначала выберите комнату на плане.';
+ $('to-geometry').disabled=!valid||detecting;$('manual-selection').hidden=manual;$('manual-selection').disabled=detecting;
+ $('manual-selection').textContent=valid?'Исправить границы спальни':'Указать спальню вручную';$('manual-help').hidden=manual||detecting;
+}
+async function findRegions(){
+ const current=image;detecting=true;regions=[];buildRegions();draw();
+ try{
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+  const img=new Image();img.src=current.url;await img.decode();if(image!==current)return;
+  const scale=Math.min(1,900/img.naturalWidth,900/img.naturalHeight),canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  regions=rescaleRegions(detectRoomRegions(ctx.getImageData(0,0,canvas.width,canvas.height)),canvas,current);
+ }catch{if(image===current)regions=[];}finally{if(image===current){detecting=false;buildRegions();draw();}}
+}
+function drawHandles(){
+ const host=$('selection-handles'),marker=$('first-corner');host.replaceChildren();marker.replaceChildren();if(stage!==2||selectionMode!=='manual'||!image)return;
+ const radius=Math.max(image.width/65,8);
+ if(first){const dot=document.createElementNS(NS,'circle');for(const[k,v]of Object.entries({cx:first.x,cy:first.y,r:radius,fill:'#385333',stroke:'white','stroke-width':radius*.25}))dot.setAttribute(k,v);marker.append(dot);}
+ if(!rect||rect.width<5||rect.height<5)return;
+ for(const [i,p] of [[0,[rect.x,rect.y]],[1,[rect.x+rect.width,rect.y]],[2,[rect.x+rect.width,rect.y+rect.height]],[3,[rect.x,rect.y+rect.height]]]){
+  const handle=document.createElementNS(NS,'circle');for(const[k,v]of Object.entries({cx:p[0],cy:p[1],r:radius,fill:'white',stroke:'#385333','stroke-width':Math.max(image.width/400,2),tabindex:0,role:'button','aria-label':'Угол '+(i+1)+'. Перетащите или двигайте стрелками.', 'data-handle':i}))handle.setAttribute(k,v);
+  handle.addEventListener('keydown',e=>{const delta={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!delta)return;e.preventDefault();const step=e.shiftKey?10:1,q={x:Math.max(0,Math.min(image.width,p[0]+delta[0]*step)),y:Math.max(0,Math.min(image.height,p[1]+delta[1]*step))};const opposite=oppositeCorner(i);selectedRegionId=null;setRect(opposite,q);invalidate();host.querySelector('[data-handle="'+i+'"]')?.focus();});host.append(handle);
+ }
+}
+function oppositeCorner(i){return {x:rect.x+([0,3].includes(i)?rect.width:0),y:rect.y+([0,1].includes(i)?rect.height:0)};}
 function invalidate(){ $('confirm-geometry').checked=false;validate(); }
 function draw(){
   $('blank-plan').hidden=!!image;$('plan-stage').hidden=!image;
   if(image){$('source-plan').setAttribute('viewBox',`0 0 ${image.width} ${image.height}`);for(const k of ['width','height'])$('plan-image').setAttribute(k,image[k]);$('plan-image').setAttribute('href',image.url);$('source-name').textContent=image.name;}
-  const r=$('room-outline');r.setAttribute('visibility',rect?'visible':'hidden');if(rect){for(const k of ['x','y','width','height']){r.setAttribute(k,rect[k]);$('crop-'+k).value=Math.round(rect[k]);}r.setAttribute('stroke-width',Math.max(image.width/350,2));}
-  $('to-geometry').disabled=!rect||rect.width<5||rect.height<5;
+  updateSelection();drawHandles();
+  const r=$('room-outline');r.setAttribute('visibility',rect&&(stage!==2||selectionMode==='manual'||!selectedRegionId)?'visible':'hidden');if(rect){for(const k of ['x','y','width','height']){r.setAttribute(k,rect[k]);$('crop-'+k).value=Math.round(rect[k]);}r.setAttribute('stroke-width',Math.max(image.width/350,2));}
+
   const g=$('opening-overlay');g.replaceChildren();if(stage!==3||!room||!rect)return;
   for(const o of openingsFor(room,heights())){
     const vertical=['left','right'].includes(o.wall),len=vertical?room.depth:room.width;
@@ -49,9 +119,9 @@ function chooseSample(which){
   renderWindows();invalidate();say('Комната выделена по нашей предварительной разметке. Проверьте её границы и проёмы.');
 }
 function scaleUI(){const m=$('scale-mode').value;$('area-field').hidden=m!=='area';$('length-field').hidden=m!=='wall';$('dimension-fields').hidden=m!=='dimensions';}
-function setImage(data){image=data;rect=null;first=null;initGeometry();showStage(2);say('План открыт. Выделите спальню; площадь и проёмы нужно указать по плану.');}
+async function setImage(data){image=data;rect=null;first=null;selectedRegionId=null;selectionMode='regions';detecting=false;regions=sample?sampleRegions():[];buildRegions();initGeometry();showStage(2);say('');if(!sample)await findRegions();}
 async function imageData(source,name){const width=Math.min(1600,source.naturalWidth||source.width),height=Math.round((source.naturalHeight||source.height)*width/(source.naturalWidth||source.width));const c=document.createElement('canvas');c.width=width;c.height=height;c.getContext('2d').drawImage(source,0,0,width,height);return {name,width,height,url:c.toDataURL('image/jpeg',.85)};}
-async function renderPage(n,t){const p=await pdf.getPage(n),vp=p.getViewport({scale:1}),viewport=p.getViewport({scale:Math.min(1600/vp.width,2000/vp.height)}),canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);await p.render({canvasContext:canvas.getContext('2d'),viewport}).promise;if(t!==ticket)return;page=n;setImage({...await imageData(canvas,pdfName),originKind:'pdf',originPage:n});$('pdf-pages-label').hidden=pdf.numPages<2;}
+async function renderPage(n,t){const p=await pdf.getPage(n),vp=p.getViewport({scale:1}),viewport=p.getViewport({scale:Math.min(1600/vp.width,2000/vp.height)}),canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);await p.render({canvasContext:canvas.getContext('2d'),viewport}).promise;if(t!==ticket)return;page=n;await setImage({...await imageData(canvas,pdfName),originKind:'pdf',originPage:n});$('pdf-pages-label').hidden=pdf.numPages<2;}
 let pdfName='';
 $('plan-file').onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return;const t=++ticket;
@@ -65,37 +135,39 @@ $('plan-file').onchange=async e=>{
       if(t!==ticket){await doc.loadingTask.destroy();return;}if(pdf)await pdf.loadingTask.destroy();pdf=doc;pdfName=file.name;
       $('pdf-pages').replaceChildren(...Array.from({length:doc.numPages},(_,i)=>new Option('Страница '+(i+1),i+1)));await renderPage(1,t);
     }else{
-      const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();if(img.width*img.height>60000000)throw Error('Изображение слишком большое. Уменьшите его до 60 мегапикселей.');if(t!==ticket)return;if(pdf)await pdf.loadingTask.destroy();pdf=null;page=1;setImage(await imageData(img,file.name));$('pdf-pages-label').hidden=true;}finally{URL.revokeObjectURL(url);}
+      const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();if(img.width*img.height>60000000)throw Error('Изображение слишком большое. Уменьшите его до 60 мегапикселей.');if(t!==ticket)return;if(pdf)await pdf.loadingTask.destroy();pdf=null;page=1;await setImage(await imageData(img,file.name));$('pdf-pages-label').hidden=true;}finally{URL.revokeObjectURL(url);}
     }
   }catch(e){say('Не удалось открыть файл. '+(file.type==='application/pdf'?'Для PDF с паролем используйте копию без защиты или изображение страницы.':e.message));}finally{if(t===ticket){$('plan-file').disabled=false;$('sample-plan').disabled=false;$('plan-file').value='';}}
 };
 $('pdf-pages').onchange=async()=>{const t=++ticket;try{await renderPage(number('pdf-pages'),t);}catch{say('Не удалось открыть страницу PDF.');}};
-$('sample-plan').onclick=async()=>{const t=++ticket;try{const img=new Image();img.src='/plans/apartment.jpg';await img.decode();if(t!==ticket)return;pdf=null;page=1;sample=true;setImage({name:'Наша квартира · пример',width:1280,height:741,url:'/plans/apartment.jpg'});$('pdf-pages-label').hidden=true;showStage(2);say('Выберите комнату на примере или обведите её самостоятельно.');}catch{say('Не удалось загрузить пример. Попробуйте свой файл.');}};
-$('right-room').onclick=()=>chooseSample('right');$('central-room').onclick=()=>chooseSample('central');
+$('sample-plan').onclick=async()=>{const t=++ticket;try{const img=new Image();img.src='/plans/apartment.jpg';await img.decode();if(t!==ticket)return;pdf=null;page=1;sample=true;await setImage({name:'Наша квартира · пример',width:1280,height:741,url:'/plans/apartment.jpg'});$('pdf-pages-label').hidden=true;showStage(2);say('Выберите одну из подсвеченных комнат.');}catch{say('Не удалось загрузить пример. Попробуйте свой файл.');}};
 const svg=$('source-plan');
 function point(e){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse());return {x:Math.max(0,Math.min(image.width,p.x)),y:Math.max(0,Math.min(image.height,p.y))};}
 function setRect(a,b){rect={x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y)};draw();}
-svg.onpointerdown=e=>{if(stage!==2||!image)return;e.preventDefault();const p=point(e);drag={start:p,id:e.pointerId,moved:false};svg.setPointerCapture(e.pointerId);};
-svg.onpointermove=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>5){drag.moved=true;setRect(drag.start,p);}};
-svg.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.moved){setRect(drag.start,p);first=null;}else if(first){setRect(first,p);first=null;}else{first=p;rect=null;say('Теперь нажмите на противоположный внутренний угол комнаты.');draw();}drag=null;if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);invalidate();};
-svg.onpointercancel=()=>{drag=null;first=null;};
-$('reset-selection').onclick=()=>{rect=null;first=null;invalidate();say('Выделите комнату заново.');};
-$('apply-crop').onclick=()=>{const r=Object.fromEntries(['x','y','width','height'].map(v=>[v,number('crop-'+v)]));if(!Object.values(r).every(Number.isFinite)||r.x<0||r.y<0||r.width<5||r.height<5||r.x+r.width>image.width||r.y+r.height>image.height){say('Граница должна находиться внутри изображения.');draw();return;}rect=r;invalidate();};
+svg.onpointerdown=e=>{if(stage!==2||!image||selectionMode!=='manual'||e.button!==0)return;e.preventDefault();const p=point(e),handle=e.target.closest('[data-handle]');drag={start:handle?oppositeCorner(Number(handle.dataset.handle)):p,id:e.pointerId,moved:false,resize:!!handle};svg.setPointerCapture(e.pointerId);};
+svg.onpointermove=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.resize||Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>5){drag.moved=true;selectedRegionId=null;first=null;setRect(drag.start,p);}};
+svg.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.moved){setRect(drag.start,p);first=null;}else if(!drag.resize){if(first){setRect(first,p);first=null;}else{first=p;rect=null;selectedRegionId=null;initGeometry();say('Первый угол отмечен. Теперь нажмите противоположный угол.');draw();}}if(rect&&rect.width>=5&&rect.height>=5)say('Спальня выделена. Проверьте границы и перейдите к размерам.');drag=null;if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);invalidate();};
+svg.onpointercancel=()=>{drag=null;draw();};
+$('reset-selection').onclick=()=>{rect=null;first=null;selectedRegionId=null;initGeometry();draw();say('Нажмите на первый внутренний угол спальни.');};
+$('manual-selection').onclick=()=>{selectionMode='manual';first=null;draw();say('');};
+$('back-regions').onclick=()=>{selectionMode='regions';first=null;draw();say('Нажмите на комнату на плане.');};
+$('apply-crop').onclick=()=>{const r=Object.fromEntries(['x','y','width','height'].map(v=>[v,number('crop-'+v)]));if(!Object.values(r).every(Number.isFinite)||r.x<0||r.y<0||r.width<5||r.height<5||r.x+r.width>image.width||r.y+r.height>image.height){say('Граница должна находиться внутри изображения.');draw();return;}rect=r;first=null;selectedRegionId=null;invalidate();};
 $('to-geometry').onclick=()=>{showStage(3);validate();say('Проверьте масштаб и все проёмы. По одной площади точные длины определить нельзя.');};
-$('change-file').onclick=()=>showStage(1);$('review-saved').onclick=()=>{showStage(2);say('Сохранённая комната. Можно исправить выделение или перейти к размерам.');};$('back-room').onclick=()=>showStage(2);
+$('change-file').onclick=()=>showStage(1);$('review-saved').onclick=async()=>{showStage(2);if(!regions.length&&!sample)await findRegions();say('Сохранённая спальня выделена. Можно исправить границы или перейти к размерам.');};$('back-room').onclick=()=>{showStage(2);say('');};
 for(const id of ['area','reference-length','width','depth','ceiling','door-wall','door-offset','door-width','door-height','door-hinge','door-swing'])$(id).addEventListener('input',invalidate);
 $('scale-mode').onchange=()=>{if(room){$('width').value=room.width;$('depth').value=room.depth;}scaleUI();invalidate();};
 $('confirm-geometry').onchange=validate;
 $('add-window').onclick=()=>{windows.push({id:crypto.randomUUID(),wall:'top',offset:300,width:1200,sill:850,height:1500});renderWindows();invalidate();};
 $('continue').onclick=()=>{
   validate();if(geometryError||!$('confirm-geometry').checked)return;
-  const project={schemaVersion:1,id:crypto.randomUUID(),purpose:'bedroom',source:{name:image.name,kind:sample?'example':image.originKind||'image',page:image.originPage||null,image},contour:rect,calibration:calibration(),room:{...room,reviewedByUser:true},heights:heights(),reviewedAt:new Date().toISOString()};
+  const project={schemaVersion:1,id:crypto.randomUUID(),purpose:'bedroom',source:{name:image.name,kind:sample?'example':image.originKind||'image',page:image.originPage||null,image},contour:rect,selection:{method:selectionMode,regionId:selectedRegionId,regions},calibration:calibration(),room:{...room,reviewedByUser:true},heights:heights(),reviewedAt:new Date().toISOString()};
   try{localStorage.setItem(PLAN_KEY,JSON.stringify(project));location.href='/planner.html?from=plan';}catch{say('Не удалось сохранить проект в браузере. Уменьшите файл или освободите место; переход не выполнен.');}
 };
 try{
   const saved=JSON.parse(localStorage.getItem(PLAN_KEY));
   if(saved?.schemaVersion===1&&saved.source?.image&&saved.contour&&!planGeometryError(saved.room,saved.heights)){
     image=saved.source.image;rect=saved.contour;sample=saved.source.kind==='example';windows=saved.room.windows;page=saved.source.page||1;
+    regions=sample?sampleRegions():(saved.selection?.regions||[]).filter(r=>r&&['x','y','width','height'].every(k=>Number.isFinite(r[k]))&&r.x>=0&&r.y>=0&&r.width>0&&r.height>0&&r.x+r.width<=image.width+1&&r.y+r.height<=image.height+1).slice(0,12);selectedRegionId=saved.selection?.regionId||null;selectionMode='regions';buildRegions();
     $('scale-mode').value=saved.calibration.mode;for(const[k,id]of [['area','area'],['length','reference-length'],['width','width'],['depth','depth']])$(id).value=saved.calibration[k]??'';
     for(const[k,id]of [['doorWall','door-wall'],['doorOffset','door-offset'],['doorWidth','door-width'],['doorHinge','door-hinge'],['doorSwing','door-swing']])$(id).value=saved.room[k];
     $('ceiling').value=saved.heights.ceiling;$('door-height').value=saved.heights.door;renderWindows();scaleUI();showStage(1);validate();$('resume').hidden=false;$('review-saved').hidden=false;
