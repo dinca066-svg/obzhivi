@@ -21,7 +21,7 @@ export function pngReference(data){
 }
 export function validateScene(scene){
  if(!scene||!scene.room||!['width','depth'].every(k=>Number.isFinite(scene.room[k])&&scene.room[k]>=1500&&scene.room[k]<=15000)||!Array.isArray(scene.furniture)||scene.furniture.length>30||typeof scene.revision!=='string'||scene.revision.length>30000)throw new ApiError(400,'Некорректные параметры сцены.');
- if(!scene.camera||scene.camera.composition!=='architecture'||scene.camera.pitch!==0||(scene.camera.roll||0)!==0)throw new ApiError(400,'Выберите опорный кадр со стенами и дверью.');
+ if(!scene.camera||!['architecture','front','left','right'].includes(scene.camera.composition)||scene.camera.pitch!==0||(scene.camera.roll||0)!==0)throw new ApiError(400,'Выберите доступный ракурс с ровным горизонтом.');
  if(JSON.stringify(scene).length>100000)throw new ApiError(413,'Описание комнаты слишком большое.');
  return scene;
 }

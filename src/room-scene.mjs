@@ -116,19 +116,19 @@ export class RoomScene{
   furnitureVisibility(c){return this.furniture.map(f=>({instanceId:f.placement.id,visibleAreaFraction:this.visualCenter(c,f.mask)?.area||0}));}
   hasCompleteRoomFrame(c){return c.clipMode!=='room-entry'||(this.visualCenter(c,'__scene__')?.area||0)>=.995;}
   architectureContext(c){
-    this.setCamera(c);const frames=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds),this.doorBounds]);
+    this.setCamera(c);const frames=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds)]);
     const projectedDoorArea=polygonArea(this.doorCorners.map(p=>p.clone().project(this.camera)));
     const doorArea=this.visualCenter(c,'door')?.area||0;
     const walls=Object.fromEntries(['wallLeft','wallRight','wallTop','wallBottom'].map(id=>[id,this.visualCenter(c,id)?.area||0]));
     this.setCamera(c);return {...frames,doorArea,doorVisibleRatio:Math.min(1,doorArea/Math.max(projectedDoorArea,1e-9)),wallAreas:walls,corners:cornerInFrame(this.camera,this.room,this.heights,walls),doorState:'closed'};
   }
   balanceArchitectureCamera(candidate){
-    this.setCamera(candidate);const m=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds),this.doorBounds]);
+    this.setCamera(candidate);const m=projectedGroup(this.camera,[this.bedBounds,...this.furniture.map(f=>f.bounds)]);
     const c={...candidate,shiftX:(candidate.shiftX||0)+(m.minX+m.maxX)/4,shiftY:(candidate.shiftY||0)-(m.minY+m.maxY)/4};
     if(Math.abs(c.shiftX)>.35||Math.abs(c.shiftY)>.35)return null;
     if(!this.hasCompleteRoomFrame(c))return null;
     const context=this.architectureContext(c);if(architectureError(context))return null;
-    return {...c,architectureContext:context,visualBalance:{method:'furniture_and_door_bounds',x:.5,y:.5}};
+    return {...c,architectureContext:context,visualBalance:{method:'furniture_bounds',x:.5,y:.5}};
   }
   balanceCamera(candidate){
     if(candidate.composition==='architecture')return this.balanceArchitectureCamera(candidate);

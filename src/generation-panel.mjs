@@ -11,7 +11,7 @@ export function generationPanel({canGenerate,snapshot}){
   if(existing){localStorage.removeItem(KEY);location.assign('/design.html?id='+existing.id);return existing;}
   return null;
  }
- request('/api/config').then(async config=>{available=config.generationReady;status.textContent=available?'Отправим опорный кадр «Комната и дверь» в Seedream. Мебель и планировка будут указаны как неизменяемые.':'Генерация пока недоступна. Вы можете скачать кадры комнаты.';refresh();if(pending&&available){await ensureSession();await recover();}}).catch(e=>{status.textContent=e.message;refresh();});
+ request('/api/config').then(async config=>{available=config.generationReady;status.textContent=available?'Отправим выбранный ракурс в Seedream. Дверь в кадре необязательна. Мебель и планировка будут указаны как неизменяемые.':'Генерация пока недоступна. Вы можете скачать кадры комнаты.';refresh();if(pending&&available){await ensureSession();await recover();}}).catch(e=>{status.textContent=e.message;refresh();});
  button.onclick=async()=>{
   if(!available||busy||!canGenerate())return;busy=true;refresh();status.textContent='Готовим кадр вашей комнаты…';
   try{

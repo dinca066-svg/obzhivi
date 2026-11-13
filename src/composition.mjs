@@ -3,7 +3,7 @@ import {architectureError} from './architecture-frame.mjs';
 import { cameraError,aimAt } from './scene-core.mjs';
 import { footprint } from './placement-core.mjs';
 
-export const COMPOSITION_VERSION=7;
+export const COMPOSITION_VERSION=8;
 export const SHOTS=[
   {id:'front',name:'Фронтально на изголовье',description:'По оси кровати, симметрично изножью.'},
   {id:'left',name:'Из левого угла',description:'Диагональ со стороны изножья слева.'},

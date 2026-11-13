@@ -3,8 +3,8 @@ import {Vector3} from 'three';
 import {frameMetrics} from './frame-metrics.mjs';
 import {cameraError,aimAt} from './scene-core.mjs';
 
-export const ARCHITECTURE_SHOT={id:'architecture',name:'Комната и дверь',description:'Основной кадр для генерации: две смежные стены, угол и закрытая дверь целиком.'};
-export const ARCHITECTURE_RULES={margin:.94,minWallArea:.03,minDoorArea:.02,minDoorVisibleRatio:.85,minCornerSpan:.12,maxFov:85};
+export const ARCHITECTURE_SHOT={id:'architecture',name:'Общий вид комнаты',description:'Мебель, две смежные стены и угол комнаты. Дверь может оставаться за кадром.'};
+export const ARCHITECTURE_RULES={margin:.94,minWallArea:.03,minCornerSpan:.12,maxFov:85};
 export function projectedGroup(camera,boxes,margin=ARCHITECTURE_RULES.margin){
   const frames=boxes.map(b=>frameMetrics(camera,b,[],margin));
   return {fits:frames.every(f=>f.fits),minX:Math.min(...frames.map(f=>f.minX)),maxX:Math.max(...frames.map(f=>f.maxX)),minY:Math.min(...frames.map(f=>f.minY)),maxY:Math.max(...frames.map(f=>f.maxY))};
@@ -21,13 +21,12 @@ export function cornerInFrame(camera,room,h,wallAreas){
 }
 export function polygonArea(points){let a=0;for(let i=0;i<points.length;i++){const p=points[i],q=points[(i+1)%points.length];a+=p.x*q.y-q.x*p.y;}return Math.abs(a)/8;}
 export function architectureError(context){
-  if(!context?.fits)return 'В опорный кадр должны целиком попадать мебель и дверь с наличниками.';
-  if(context.doorArea<ARCHITECTURE_RULES.minDoorArea||context.doorVisibleRatio<ARCHITECTURE_RULES.minDoorVisibleRatio)return 'Дверь должна быть хорошо видна и не перекрыта мебелью.';
+  if(!context?.fits)return 'В кадр должна целиком попадать выбранная мебель.';
   if(!context.corners?.length)return 'В кадре нужны две достаточно широкие смежные стены и видимый угол между ними.';
   return '';
 }
 export function proposeArchitecture(view,room,placement,product,h){
-  const boxes=[view.bedBounds,...view.furniture.map(f=>f.bounds),view.doorBounds],target=new Vector3();for(const b of boxes)target.add(b.getCenter(new Vector3()));target.divideScalar(boxes.length);
+  const boxes=[view.bedBounds,...view.furniture.map(f=>f.bounds)],target=new Vector3();for(const b of boxes)target.add(b.getCenter(new Vector3()));target.divideScalar(boxes.length);
   for(const insets of [[180,350],[-400,-900,-1500]]){
   const candidates=[];
   for(const inset of insets)for(let i=0;i<=6;i++)for(const side of ['top','right','bottom','left']){
@@ -49,5 +48,5 @@ export function proposeArchitecture(view,room,placement,product,h){
   candidates.sort((a,b)=>a.score-b.score);
   for(const {c} of candidates){const balanced=view.balanceArchitectureCamera(c);if(balanced)return {camera:balanced,reason:''};}
   }
-  return {camera:null,reason:'Не найден кадр 3:4 даже с внешней камерой и отсечением стены, в котором целиком помещаются мебель, дверь и две смежные стены. Уточните расстановку или геометрию.'};
+  return {camera:null,reason:'Не найден кадр 3:4 даже с внешней камерой и отсечением стены, в котором целиком помещаются мебель и две смежные стены. Уточните расстановку или геометрию.'};
 }
