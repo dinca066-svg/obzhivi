@@ -1,16 +1,19 @@
+import {detectPlanOpenings,assembleRecognizedRoom} from './plan-recognition.mjs';
+import {recognizeArea} from './plan-ocr.mjs';
 import {detectRoomRegions,rescaleRegions} from './room-detection.mjs';
 import {PLAN_KEY,dimensionsFromPlan,planGeometryError} from './plan-core.mjs';
 import {DEFAULT_HEIGHTS,openingsFor} from './scene-core.mjs';
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 let stage=1,image=null,rect=null,windows=[],pdf=null,page=1,ticket=0,drag=null,first=null,room=null,geometryError='',sample=false;
+let analyzing=false,analysisController=null,analysisCache=null,recognition=null;
 let regions=[],selectedRegionId=null,selectionMode='regions',detecting=false;
 const number=id=>Number($(id).value),wallOptions='<option value="left">Левая</option><option value="right">Правая</option><option value="top">Верхняя</option><option value="bottom">Нижняя</option>';
 const say=t=>{$('message').textContent=t;};
 function showStage(n){
  stage=n;$('upload-panel').hidden=n!==1;$('room-panel').hidden=n!==2;$('geometry-panel').hidden=n!==3;
- $('plan-title').textContent=n===3?'Проверьте проёмы на плане':'План квартиры';
- $('stage-title').textContent=n===1?'Сначала — ваша планировка':n===2?'Какая комната станет спальней?':'Проверьте размеры спальни';
- $('stage-description').textContent=n===1?'Загрузите план, выберите спальню и проверьте размеры. Мы соберём комнату для примерки настоящей мебели.':n===2?'Нажмите на комнату на плане. На следующем шаге уточним размеры, дверь и окна.':'Уточните масштаб, дверь и окна — по этим данным мы соберём вашу 3D-комнату.';
+ $('plan-title').textContent=n===3?'Размеры и проёмы на плане':'План квартиры';
+ $('stage-title').textContent=n===1?'Сначала — ваша планировка':n===2?'Какая комната станет спальней?':'Изменить комнату';
+ $('stage-description').textContent=n===1?'Загрузите план и выберите спальню. Мы определим размеры, дверь и окна и подготовим комнату для мебели.':n===2?'Выберите спальню — размеры, дверь и окна мы найдём на плане сами.':'Здесь можно исправить распознавание или уточнить размеры после обмера.';
  $('step-label').textContent=n===1?'01 · Загрузка плана':n===2?'01 · Выбор спальни':'01 · Размеры и проёмы';
  $('plan-hint').textContent=n===3?'Зелёный контур — спальня. Синий — окна, охра — дверь.':image?'Перед сборкой комнаты проверьте границы по внутреннему краю стен.':'Файл обрабатывается в этом браузере.';
  draw();
@@ -30,11 +33,11 @@ function buildRegions(){
  });
 }
 function chooseRegion(id){
- if(stage!==2||selectionMode!=='regions'||detecting)return;
+ if(stage!==2||selectionMode!=='regions'||detecting||analyzing)return;
  const r=regions.find(r=>r.id===id);if(!r||selectedRegionId===id&&rect)return;
  initGeometry();first=null;selectedRegionId=id;
  if(r.sampleKey)chooseSample(r.sampleKey);else{rect={x:r.x,y:r.y,width:r.width,height:r.height};invalidate();}
- say('Спальня выбрана. Можно выбрать другую комнату или перейти к проверке размеров.');draw();
+ say('Спальня выбрана. Можно выбрать другую комнату или собрать комнату.');draw();
 }
 function updateSelection(){
  const manual=selectionMode==='manual',valid=rect&&rect.width>=5&&rect.height>=5,selected=regions.find(r=>r.id===selectedRegionId),index=regions.indexOf(selected);
@@ -47,10 +50,10 @@ function updateSelection(){
  $('selection-title').textContent=valid?'Спальня выбрана':manual?'Укажите границы спальни':detecting?'Определяем границы комнат':'Выберите спальню на плане';
  $('selection-description').textContent=valid?'Выбор сохранён на этом шаге. Проверьте, что выделена нужная комната.':manual?'Отметьте два угла на плане или задайте границы числами под изображением.':detecting?'Это займёт немного времени. План обрабатывается в вашем браузере.':regions.length?'Нажмите на цветную область или выберите комнату из списка под планом.':'На этом изображении границы недостаточно чёткие. Можно выделить прямоугольную комнату самостоятельно.';
  $('selected-room').hidden=!valid;$('selected-room-name').textContent=selected?'Комната '+(index+1)+' · спальня':'Спальня · свои границы';
- $('selected-room-area').textContent=selected?.area?selected.area.toLocaleString('ru-RU')+' м² · площадь с примера':number('area')>0&&$('scale-mode').value==='area'?number('area').toLocaleString('ru-RU')+' м² · указано вами':'Площадь укажем на следующем шаге';
+ $('selected-room-area').textContent=selected?.area?selected.area.toLocaleString('ru-RU')+' м² · площадь с примера':number('area')>0&&$('scale-mode').value==='area'?number('area').toLocaleString('ru-RU')+' м² · '+(recognition?.areaSource==='ocr'?'прочитано с плана':'указано вами'):'Площадь и проёмы определим автоматически';
  $('selection-status').textContent=detecting?'':manual?'Укажите прямоугольную спальню по внутренним границам стен.':sample?'На примере подсвечены две заранее размеченные комнаты.':regions.length?'Предварительное выделение по линиям плана. Проверьте границы.':'Сейчас поддерживаются прямоугольные комнаты.';
- $('continue-hint').textContent=valid?'Дальше уточним площадь, расположение двери и окон.':manual?'Кнопка станет доступна после выделения двух углов.':'Сначала выберите комнату на плане.';
- $('to-geometry').disabled=!valid||detecting;$('manual-selection').hidden=manual;$('manual-selection').disabled=detecting;
+ $('continue-hint').textContent=valid?'Найдём площадь, дверь и окна и откроем расстановку мебели.':manual?'Кнопка станет доступна после выделения двух углов.':'Сначала выберите комнату на плане.';
+ $('to-geometry').disabled=!valid||detecting||analyzing;$('manual-selection').hidden=manual;$('manual-selection').disabled=detecting||analyzing;
  $('manual-selection').textContent=valid?'Исправить границы спальни':'Указать спальню вручную';$('manual-help').hidden=manual||detecting;
 }
 async function findRegions(){
@@ -74,7 +77,7 @@ function drawHandles(){
  }
 }
 function oppositeCorner(i){return {x:rect.x+([0,3].includes(i)?rect.width:0),y:rect.y+([0,1].includes(i)?rect.height:0)};}
-function invalidate(){ $('confirm-geometry').checked=false;validate(); }
+function invalidate(){ validate(); }
 function draw(){
   $('blank-plan').hidden=!!image;$('plan-stage').hidden=!image;
   if(image){$('source-plan').setAttribute('viewBox',`0 0 ${image.width} ${image.height}`);for(const k of ['width','height'])$('plan-image').setAttribute(k,image[k]);$('plan-image').setAttribute('href',image.url);$('source-name').textContent=image.name;}
@@ -98,7 +101,7 @@ function validate(){
     $('dimensions-result').textContent=`${(d.width/1000).toLocaleString('ru-RU')} × ${(d.depth/1000).toLocaleString('ru-RU')} м · ${(d.width*d.depth/1e6).toLocaleString('ru-RU',{maximumFractionDigits:2})} м²`;
     geometryError=planGeometryError(room,heights());
   }catch(e){geometryError=e.message;$('dimensions-result').textContent='Размеры ещё не определены.';}
-  $('geometry-error').textContent=stage===3?geometryError:'';$('continue').disabled=!!geometryError||!$('confirm-geometry').checked;draw();
+  $('geometry-error').textContent=stage===3?geometryError:'';$('continue').disabled=!!geometryError;draw();
 }
 function renderWindows(){
   const host=$('windows');host.replaceChildren();windows.forEach((w,i)=>{
@@ -108,6 +111,8 @@ function renderWindows(){
   });
 }
 function initGeometry(){
+  analysisCache=null;recognition=null;$('area-help').hidden=true;$('recognition-error').textContent='';$('repair-geometry').hidden=true;$('missing-area').value='';
+  $('ceiling').value=DEFAULT_HEIGHTS.ceiling;$('door-height').value=DEFAULT_HEIGHTS.door;$('door-hinge').value='start';$('door-swing').value='inward';
   $('area').value='';$('reference-length').value='';$('width').value='';$('depth').value='';$('door-offset').value='0';$('door-width').value='900';$('door-wall').value='left';$('scale-mode').value='area';windows=[];renderWindows();scaleUI();invalidate();
 }
 function chooseSample(which){
@@ -143,33 +148,69 @@ $('pdf-pages').onchange=async()=>{const t=++ticket;try{await renderPage(number('
 $('sample-plan').onclick=async()=>{const t=++ticket;try{const img=new Image();img.src='/plans/apartment.jpg';await img.decode();if(t!==ticket)return;pdf=null;page=1;sample=true;await setImage({name:'Наша квартира · пример',width:1280,height:741,url:'/plans/apartment.jpg'});$('pdf-pages-label').hidden=true;showStage(2);say('Выберите одну из подсвеченных комнат.');}catch{say('Не удалось загрузить пример. Попробуйте свой файл.');}};
 const svg=$('source-plan');
 function point(e){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse());return {x:Math.max(0,Math.min(image.width,p.x)),y:Math.max(0,Math.min(image.height,p.y))};}
-function setRect(a,b){rect={x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y)};draw();}
+function clearAnalysis(){analysisCache=null;recognition=null;$('area-help').hidden=true;$('missing-area').value='';$('recognition-error').textContent='';$('repair-geometry').hidden=true;}
+function setRect(a,b){clearAnalysis();rect={x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),width:Math.abs(a.x-b.x),height:Math.abs(a.y-b.y)};draw();}
 svg.onpointerdown=e=>{if(stage!==2||!image||selectionMode!=='manual'||e.button!==0)return;e.preventDefault();const p=point(e),handle=e.target.closest('[data-handle]');drag={start:handle?oppositeCorner(Number(handle.dataset.handle)):p,id:e.pointerId,moved:false,resize:!!handle};svg.setPointerCapture(e.pointerId);};
 svg.onpointermove=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.resize||Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>5){drag.moved=true;selectedRegionId=null;first=null;setRect(drag.start,p);}};
-svg.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.moved){setRect(drag.start,p);first=null;}else if(!drag.resize){if(first){setRect(first,p);first=null;}else{first=p;rect=null;selectedRegionId=null;initGeometry();say('Первый угол отмечен. Теперь нажмите противоположный угол.');draw();}}if(rect&&rect.width>=5&&rect.height>=5)say('Спальня выделена. Проверьте границы и перейдите к размерам.');drag=null;if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);invalidate();};
+svg.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const p=point(e);if(drag.moved){setRect(drag.start,p);first=null;}else if(!drag.resize){if(first){setRect(first,p);first=null;}else{first=p;rect=null;selectedRegionId=null;initGeometry();say('Первый угол отмечен. Теперь нажмите противоположный угол.');draw();}}if(rect&&rect.width>=5&&rect.height>=5)say('Спальня выделена. Проверьте границы и соберите комнату.');drag=null;if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);invalidate();};
 svg.onpointercancel=()=>{drag=null;draw();};
 $('reset-selection').onclick=()=>{rect=null;first=null;selectedRegionId=null;initGeometry();draw();say('Нажмите на первый внутренний угол спальни.');};
 $('manual-selection').onclick=()=>{selectionMode='manual';first=null;draw();say('');};
 $('back-regions').onclick=()=>{selectionMode='regions';first=null;draw();say('Нажмите на комнату на плане.');};
-$('apply-crop').onclick=()=>{const r=Object.fromEntries(['x','y','width','height'].map(v=>[v,number('crop-'+v)]));if(!Object.values(r).every(Number.isFinite)||r.x<0||r.y<0||r.width<5||r.height<5||r.x+r.width>image.width||r.y+r.height>image.height){say('Граница должна находиться внутри изображения.');draw();return;}rect=r;first=null;selectedRegionId=null;invalidate();};
-$('to-geometry').onclick=()=>{showStage(3);validate();say('Проверьте масштаб и все проёмы. По одной площади точные длины определить нельзя.');};
-$('change-file').onclick=()=>showStage(1);$('review-saved').onclick=async()=>{showStage(2);if(!regions.length&&!sample)await findRegions();say('Сохранённая спальня выделена. Можно исправить границы или перейти к размерам.');};$('back-room').onclick=()=>{showStage(2);say('');};
+$('apply-crop').onclick=()=>{const r=Object.fromEntries(['x','y','width','height'].map(v=>[v,number('crop-'+v)]));if(!Object.values(r).every(Number.isFinite)||r.x<0||r.y<0||r.width<5||r.height<5||r.x+r.width>image.width||r.y+r.height>image.height){say('Граница должна находиться внутри изображения.');draw();return;}clearAnalysis();rect=r;first=null;selectedRegionId=null;invalidate();};
+$('to-geometry').onclick=buildAutomatically;
+$('cancel-analysis').onclick=()=>analysisController?.abort();
+$('repair-geometry').onclick=()=>{showStage(3);validate();say('Измените только то, что нужно исправить.');};
+$('change-file').onclick=()=>showStage(1);$('review-saved').onclick=async()=>{showStage(2);if(!regions.length&&!sample)await findRegions();say('Сохранённая спальня выделена. Можно исправить границы или собрать комнату.');};$('back-room').onclick=()=>{showStage(2);say('');};
 for(const id of ['area','reference-length','width','depth','ceiling','door-wall','door-offset','door-width','door-height','door-hinge','door-swing'])$(id).addEventListener('input',invalidate);
 $('scale-mode').onchange=()=>{if(room){$('width').value=room.width;$('depth').value=room.depth;}scaleUI();invalidate();};
-$('confirm-geometry').onchange=validate;
 $('add-window').onclick=()=>{windows.push({id:crypto.randomUUID(),wall:'top',offset:300,width:1200,sill:850,height:1500});renderWindows();invalidate();};
-$('continue').onclick=()=>{
-  validate();if(geometryError||!$('confirm-geometry').checked)return;
-  const project={schemaVersion:1,id:crypto.randomUUID(),purpose:'bedroom',source:{name:image.name,kind:sample?'example':image.originKind||'image',page:image.originPage||null,image},contour:rect,selection:{method:selectionMode,regionId:selectedRegionId,regions},calibration:calibration(),room:{...room,reviewedByUser:true},heights:heights(),reviewedAt:new Date().toISOString()};
-  try{localStorage.setItem(PLAN_KEY,JSON.stringify(project));location.href='/planner.html?from=plan';}catch{say('Не удалось сохранить проект в браузере. Уменьшите файл или освободите место; переход не выполнен.');}
-};
+function saveProject(result,manual=false){
+  const project={schemaVersion:1,id:crypto.randomUUID(),purpose:'bedroom',source:{name:image.name,kind:sample?'example':image.originKind||'image',page:image.originPage||null,image},contour:{...rect},selection:{method:selectionMode,regionId:selectedRegionId,regions},...result,room:{...result.room,reviewedByUser:manual},createdAt:new Date().toISOString()};
+  try{localStorage.setItem(PLAN_KEY,JSON.stringify(project));location.href='/planner.html?from=plan';}catch{throw Error('Не удалось сохранить проект в браузере. Уменьшите файл или освободите место.');}
+}
+$('continue').onclick=()=>{validate();if(geometryError)return;try{saveProject({room,heights:heights(),calibration:calibration(),recognition:recognition?{...recognition,manuallyEdited:true}:null},true);}catch(e){say(e.message);}};
+function analysisUI(on){
+ analyzing=on;$('room-panel').setAttribute('aria-busy',String(on));$('plan-card').inert=on;
+ for(const id of ['manual-selection','change-file','missing-area','repair-geometry'])$(id).disabled=on;
+ $('cancel-analysis').hidden=!on;$('analysis-progress').hidden=!on;
+ $('to-geometry').textContent=on?'Собираем спальню…':'Перейти к расстановке →';draw();
+}
+async function buildAutomatically(){
+ if(analyzing||!rect)return;
+ const controller=new AbortController();analysisController=controller;
+ const current=image,bounds={...rect},signature=JSON.stringify(bounds);analysisUI(true);
+ $('recognition-error').textContent='';$('repair-geometry').hidden=true;$('analysis-progress').textContent='Читаем площадь и ищем окна и дверь…';say('');
+ try{
+  if(!analysisCache||analysisCache.image!==current||analysisCache.signature!==signature){
+   const source=new Image();source.src=current.url;await source.decode();controller.signal.throwIfAborted();
+   const canvas=document.createElement('canvas');canvas.width=current.width;canvas.height=current.height;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(source,0,0,canvas.width,canvas.height);
+   const detection=detectPlanOpenings(ctx.getImageData(0,0,canvas.width,canvas.height),bounds);
+   const ocr=await recognizeArea(source,bounds,controller.signal,()=>{$('analysis-progress').textContent='Читаем площадь комнаты…';});
+   controller.signal.throwIfAborted();analysisCache={image:current,signature,detection,...ocr};
+  }
+  controller.signal.throwIfAborted();if(current!==image||signature!==JSON.stringify(rect))return;
+  const provided=!$('area-help').hidden?Number($('missing-area').value.replace(',','.')):null;
+  const area=analysisCache.area||provided;
+  if(!area||!Number.isFinite(area)||area<2||area>225){$('area-help').hidden=false;$('missing-area').focus();throw Error('Не удалось прочитать площадь этой комнаты. Укажите только площадь — остальные данные определим по плану.');}
+  $('area').value=area;$('scale-mode').value='area';scaleUI();
+  const result=assembleRecognizedRoom(bounds,area,analysisCache.detection);
+  result.recognition.areaSource=analysisCache.area?'ocr':'user';result.recognition.areaEvidence=analysisCache.evidence;
+  recognition=result.recognition;windows=result.room.windows;
+  for(const[k,id]of [['doorWall','door-wall'],['doorOffset','door-offset'],['doorWidth','door-width'],['doorHinge','door-hinge'],['doorSwing','door-swing']])$(id).value=result.room[k];
+  renderWindows();$('analysis-progress').textContent='Комната готова. Открываем мебель…';saveProject(result);
+ }catch(e){
+  if(!controller.signal.aborted){$('recognition-error').textContent=e.message||'Не удалось прочитать план. Попробуйте ещё раз.';$('repair-geometry').hidden=false;}
+ }finally{if(analysisController===controller){analysisController=null;analysisUI(false);if(!$('area-help').hidden)$('missing-area').focus();}}
+}
+
 try{
   const saved=JSON.parse(localStorage.getItem(PLAN_KEY));
   if(saved?.schemaVersion===1&&saved.source?.image&&saved.contour&&!planGeometryError(saved.room,saved.heights)){
-    image=saved.source.image;rect=saved.contour;sample=saved.source.kind==='example';windows=saved.room.windows;page=saved.source.page||1;
+    recognition=saved.recognition||null;image=saved.source.image;rect=saved.contour;sample=saved.source.kind==='example';windows=saved.room.windows;page=saved.source.page||1;
     regions=sample?sampleRegions():(saved.selection?.regions||[]).filter(r=>r&&['x','y','width','height'].every(k=>Number.isFinite(r[k]))&&r.x>=0&&r.y>=0&&r.width>0&&r.height>0&&r.x+r.width<=image.width+1&&r.y+r.height<=image.height+1).slice(0,12);selectedRegionId=saved.selection?.regionId||null;selectionMode='regions';buildRegions();
     $('scale-mode').value=saved.calibration.mode;for(const[k,id]of [['area','area'],['length','reference-length'],['width','width'],['depth','depth']])$(id).value=saved.calibration[k]??'';
     for(const[k,id]of [['doorWall','door-wall'],['doorOffset','door-offset'],['doorWidth','door-width'],['doorHinge','door-hinge'],['doorSwing','door-swing']])$(id).value=saved.room[k];
-    $('ceiling').value=saved.heights.ceiling;$('door-height').value=saved.heights.door;renderWindows();scaleUI();showStage(1);validate();$('resume').hidden=false;$('review-saved').hidden=false;
+    $('ceiling').value=saved.heights.ceiling;$('door-height').value=saved.heights.door;renderWindows();scaleUI();showStage(1);validate();$('resume').hidden=false;$('review-saved').hidden=false;if(new URLSearchParams(location.search).get('edit')==='geometry'){showStage(3);validate();}
   }else if(localStorage.getItem('obzhivi-bedroom-layout-v1'))$('resume').hidden=false;
 }catch{}

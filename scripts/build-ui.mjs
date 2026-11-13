@@ -34,3 +34,10 @@ console.log('Built .generated/public/');
 await build({entryPoints:['src/design.mjs'],outfile:'.generated/public/assets/design.js',bundle:true,minify:true,format:'esm',target:'es2022'});
 for(const name of ['design.html','test.html'])await copyFile('src/'+name,'.generated/public/'+name);
 await copyFile('src/design.css','.generated/public/assets/design.css');
+
+await mkdir('.generated/public/ocr/core',{recursive:true});
+await mkdir('.generated/public/ocr/lang',{recursive:true});
+await copyFile('node_modules/tesseract.js/dist/worker.min.js','.generated/public/ocr/worker.min.js');
+await copyFile('node_modules/tesseract.js/LICENSE.md','.generated/public/ocr/LICENSE');
+await cp('node_modules/tesseract.js-core','.generated/public/ocr/core',{recursive:true});
+await copyFile('node_modules/@tesseract.js-data/rus/4.0.0/rus.traineddata.gz','.generated/public/ocr/lang/rus.traineddata.gz');

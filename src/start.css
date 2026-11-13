@@ -9,3 +9,5 @@
 @media(prefers-reduced-motion:reduce){.room-region>rect{transition:none}}
 
 #blank-plan p{color:#626e58}.start-main input::placeholder{color:#626e58}.start-main footer{color:#626e58}.card-heading span{font-size:12px}
+
+.analysis-progress{padding:14px 0;border-bottom:1px solid #d4ddca;color:#385333!important}#recognition-error{color:#89452f;line-height:1.5}#area-help{margin-top:20px}#room-panel[aria-busy=true] #selected-room{opacity:.7}
