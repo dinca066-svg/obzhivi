@@ -5,18 +5,19 @@ export const CAMERA_KEY='obzhivi-bedroom-cameras-v1';
 export const DEFAULT_HEIGHTS={ceiling:2700,door:2100,sill:850,window:1500};
 export const FRAME_WIDTH=1200,FRAME_HEIGHT=1600;
 export const ASPECT=FRAME_WIDTH/FRAME_HEIGHT;
-export function validateHeights(h){
+export function validateHeights(h,room=null){
   if(!Object.values(h).every(Number.isFinite))return 'Укажите все высоты в миллиметрах.';
   if(h.ceiling<2200||h.ceiling>6000)return 'Высота потолка должна быть от 2200 до 6000 мм.';
   if(h.door<1800||h.door>h.ceiling-80)return 'Дверь должна быть ниже потолка минимум на 80 мм.';
-  if(h.sill<100||h.window<400||h.sill+h.window>h.ceiling-80)return 'Проверьте окно: подоконник от 100 мм, высота окна от 400 мм, верх ниже потолка на 80 мм.';
+  if(!Array.isArray(room?.windows)&&(h.sill<100||h.window<400||h.sill+h.window>h.ceiling-80))return 'Проверьте окно: подоконник от 100 мм, высота окна от 400 мм, верх ниже потолка на 80 мм.';
   return '';
 }
-export function openingsFor(room,h){return [
+export function windowsFor(room,h=DEFAULT_HEIGHTS){return Array.isArray(room.windows)?room.windows.map((w,i)=>({id:w.id||'window-'+i,kind:'window',wall:w.wall,start:w.offset,end:w.offset+w.width,bottom:w.sill,top:w.sill+w.height})):[
   {id:'window-top',kind:'window',wall:'top',start:room.width*.11,end:room.width*.77,bottom:h.sill,top:h.sill+h.window},
-  {id:'window-right',kind:'window',wall:'right',start:room.depth*.183,end:room.depth*.56,bottom:h.sill,top:h.sill+h.window},
-  {id:'door',kind:'door',wall:room.doorWall,start:room.doorOffset,end:room.doorOffset+room.doorWidth,bottom:0,top:h.door}
+  {id:'window-right',kind:'window',wall:'right',start:room.depth*.183,end:room.depth*.56,bottom:h.sill,top:h.sill+h.window}
 ];}
+export function openingsFor(room,h){return [...windowsFor(room,h),{id:'door',kind:'door',wall:room.doorWall,start:room.doorOffset,end:room.doorOffset+room.doorWidth,bottom:0,top:h.door}];}
+export function openingPlanPath(o,room){return o.wall==='top'?`M${o.start} 0H${o.end}`:o.wall==='bottom'?`M${o.start} ${room.depth}H${o.end}`:o.wall==='left'?`M0 ${o.start}V${o.end}`:`M${room.width} ${o.start}V${o.end}`;}
 export function openingConflict(openings){return openings.some((a,i)=>openings.slice(i+1).some(b=>a.wall===b.wall&&a.start<b.end&&b.start<a.end&&a.bottom<b.top&&b.bottom<a.top));}
 // Subdivide each wall at opening edges; keep only solid cells. Coordinates in mm.
 export function wallCells(length,height,openings){
@@ -28,7 +29,7 @@ export function wallCells(length,height,openings){
   }
   return cells;
 }
-export function sceneSignature(layout,product){return JSON.stringify({room:layout.room,placement:layout.placement,furniture:layout.furniture||[],productId:product.id,updatedAt:product.updatedAt||null,normalization:product.normalization,dimensions:product.dimensionsMm});}
+export function sceneSignature(layout,product){return JSON.stringify({room:layout.room,heights:layout.heights||null,placement:layout.placement,furniture:layout.furniture||[],productId:product.id,updatedAt:product.updatedAt||null,normalization:product.normalization,dimensions:product.dimensionsMm});}
 export function cameraError(c,room,placement,product,h){
   if(!c||![c.x,c.z,c.height,c.yaw,c.pitch,c.fov].every(Number.isFinite))return 'Укажите все параметры камеры.';
   if(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180)return 'Передвиньте камеру внутрь комнаты, минимум на 18 см от стены.';
