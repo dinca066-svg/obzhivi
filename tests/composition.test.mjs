@@ -19,9 +19,9 @@ test('three compositions follow the bed at every quarter turn and keep the entir
     out.forEach((o,i)=>{assert.equal(compositionError(o.camera,SHOTS[i].id,room,p,product,DEFAULT_HEIGHTS,inspect),'');assert.equal(o.camera.pitch,0);assert.equal(o.camera.roll,0);assert.ok(o.camera.fov<=65);});
   }
 });
-test('tight foot clearance reports missing frontal view instead of substituting a diagonal',()=>{
+test('tight foot clearance uses an exterior frontal camera without substituting a diagonal',()=>{
   const p={x:1060,z:1620,rotation:270},out=proposeCompositions(DEFAULT_ROOM,p,product,DEFAULT_HEIGHTS,inspector(p));
-  assert.equal(out[0].camera,null);assert.match(out[0].reason,/недостаточно/);assert.ok(out.slice(1).some(o=>o.camera));
+  assert.ok(out[0].camera);assert.equal(out[0].camera.clipMode,'room-entry');assert.ok(out[0].camera.x>DEFAULT_ROOM.width);assert.ok(Math.abs(relativeCamera(out[0].camera,p).side)<.001);assert.ok(out[0].camera.nearClipMm>50);assert.ok(out.slice(1).some(o=>o.camera));
 });
 test('occluding geometry blocks shots even when the whole bed projects inside the frame',()=>{
   const p={x:3000,z:1500,rotation:0},room={...DEFAULT_ROOM,width:6000,depth:6000},inspect=inspector(p),out=proposeCompositions(room,p,product,DEFAULT_HEIGHTS,inspect),c=out[0].camera;

@@ -1,3 +1,4 @@
+import {withRoomClipping} from './camera-clipping.mjs';
 import {Vector3} from 'three';
 import {frameMetrics} from './frame-metrics.mjs';
 import {cameraError,aimAt} from './scene-core.mjs';
@@ -27,12 +28,13 @@ export function architectureError(context){
 }
 export function proposeArchitecture(view,room,placement,product,h){
   const boxes=[view.bedBounds,...view.furniture.map(f=>f.bounds),view.doorBounds],target=new Vector3();for(const b of boxes)target.add(b.getCenter(new Vector3()));target.divideScalar(boxes.length);
+  for(const insets of [[180,350],[-400,-900,-1500]]){
   const candidates=[];
-  for(const inset of [180,350])for(let i=0;i<=6;i++)for(const side of ['top','right','bottom','left']){
+  for(const inset of insets)for(let i=0;i<=6;i++)for(const side of ['top','right','bottom','left']){
     const x=side==='left'?inset:side==='right'?room.width-inset:inset+(room.width-2*inset)*i/6;
     const z=side==='top'?inset:side==='bottom'?room.depth-inset:inset+(room.depth-2*inset)*i/6;
-    for(const height of [1400,1500,1300])for(const fov of [50,55,60,65,70,75,80,85])for(const yawDelta of [-15,0,15]){
-      let c=aimAt({x,z,height,fov,pitch:0,composition:'architecture'},target.x*1000,target.z*1000,height);c.yaw+=yawDelta;
+    for(const height of [1400,1500,1600,1700,1300])for(const fov of [50,55,60,65,70,75,80,85])for(const yawDelta of [-15,0,15]){
+      let c=aimAt({x,z,height,fov,pitch:0,composition:'architecture'},target.x*1000,target.z*1000,height);c.yaw+=yawDelta;c=withRoomClipping(c,room);
       if(cameraError(c,room,placement,product,h))continue;
       view.setCamera(c);const unshifted=projectedGroup(view.camera,boxes);
       if(!Number.isFinite(unshifted.minX))continue;
@@ -40,10 +42,12 @@ export function proposeArchitecture(view,room,placement,product,h){
       if(Math.abs(c.shiftX)>.35||Math.abs(c.shiftY)>.35)continue;
       view.setCamera(c);const metrics=projectedGroup(view.camera,boxes);
       if(!metrics.fits||!cornerInFrame(view.camera,room,h).length)continue;
+      if(view.inspectFrame?.({...c,composition:'front'}).blocked)continue;
       candidates.push({c,score:fov+Math.abs(height-1400)*.003+Math.abs(yawDelta)*.01+Math.abs(c.shiftX)*2});
     }
   }
   candidates.sort((a,b)=>a.score-b.score);
   for(const {c} of candidates){const balanced=view.balanceArchitectureCamera(c);if(balanced)return {camera:balanced,reason:''};}
-  return {camera:null,reason:'Изнутри комнаты не найден кадр 3:4, в котором целиком помещаются мебель, дверь и две смежные стены. Уточните расстановку или геометрию.'};
+  }
+  return {camera:null,reason:'Не найден кадр 3:4 даже с внешней камерой и отсечением стены, в котором целиком помещаются мебель, дверь и две смежные стены. Уточните расстановку или геометрию.'};
 }

@@ -1,4 +1,5 @@
 import { boundsOf, footprint, doorGeometry } from './placement-core.mjs';
+import {clippingError,outsideRoom} from './camera-clipping.mjs';
 
 export const LAYOUT_KEY='obzhivi-bedroom-layout-v1';
 export const CAMERA_KEY='obzhivi-bedroom-cameras-v1';
@@ -32,7 +33,8 @@ export function wallCells(length,height,openings){
 export function sceneSignature(layout,product){return JSON.stringify({room:layout.room,heights:layout.heights||null,placement:layout.placement,furniture:layout.furniture||[],productId:product.id,updatedAt:product.updatedAt||null,normalization:product.normalization,dimensions:product.dimensionsMm});}
 export function cameraError(c,room,placement,product,h){
   if(!c||![c.x,c.z,c.height,c.yaw,c.pitch,c.fov].every(Number.isFinite))return 'Укажите все параметры камеры.';
-  if(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180)return 'Передвиньте камеру внутрь комнаты, минимум на 18 см от стены.';
+  const clipError=clippingError(c,room);if(clipError)return clipError;
+  if(!outsideRoom(c,room)&&(c.x<180||c.x>room.width-180||c.z<180||c.z>room.depth-180))return 'Передвиньте камеру на 18 см от стены внутрь или вынесите за стену для отсечения.';
   if(c.height<800||c.height>Math.min(2200,h.ceiling-200))return 'Камера должна быть на высоте от 80 см до 220 см и ниже потолка.';
   if(c.fov<35||c.fov>(c.composition==='architecture'?85:75)||c.pitch!==0||(c.roll??0)!==0||!['shiftX','shiftY'].every(k=>Number.isFinite(c[k]??0)&&Math.abs(c[k]??0)<=.35))return 'Недопустимый угол обзора или смещение. Горизонт должен оставаться ровным.';
   const b=boundsOf(placement,footprint(product));
