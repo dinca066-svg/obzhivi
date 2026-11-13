@@ -1,0 +1,36 @@
+import { build } from 'esbuild';
+import { mkdir, copyFile, cp, rm } from 'node:fs/promises';
+import './fixtures.mjs';
+await rm('.generated/public', { recursive: true, force: true });
+await mkdir('.generated/public/assets', { recursive: true });
+await build({ entryPoints: ['src/app.mjs'], outfile: '.generated/public/assets/app.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
+await build({ entryPoints: ['src/planner.mjs'], outfile: '.generated/public/assets/planner.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
+await copyFile('src/planner.html', '.generated/public/planner.html');
+await mkdir('.generated/public/planner', {recursive:true});
+await copyFile('src/planner.html', '.generated/public/planner/index.html');
+await copyFile('src/planner.css', '.generated/public/assets/planner.css');
+await copyFile('src/start.html', '.generated/public/index.html');
+await copyFile('src/start.html', '.generated/public/start.html');
+await copyFile('src/catalog.html', '.generated/public/catalog.html');
+await build({entryPoints:['src/start.mjs'],outfile:'.generated/public/assets/start.js',bundle:true,minify:true,format:'esm',target:'es2022'});
+await copyFile('src/start.css','.generated/public/assets/start.css');
+await mkdir('.generated/public/pdf',{recursive:true});
+await copyFile('node_modules/pdfjs-dist/LICENSE','.generated/public/pdf/LICENSE');
+for(const name of ['pdf.mjs','pdf.worker.mjs'])await copyFile('node_modules/pdfjs-dist/build/'+name,'.generated/public/pdf/'+name);
+for(const name of ['cmaps','standard_fonts','wasm'])await cp('node_modules/pdfjs-dist/'+name,'.generated/public/pdf/'+name,{recursive:true});
+await copyFile('src/styles.css', '.generated/public/assets/styles.css');
+await cp('public', '.generated/public', { recursive: true });
+await cp('node_modules/three/examples/jsm/libs/draco/gltf', '.generated/public/decoders/draco', { recursive: true });
+await mkdir('.generated/public/decoders/basis', { recursive: true });
+for (const name of ['basis_transcoder.js', 'basis_transcoder.wasm']) await copyFile('node_modules/three/examples/jsm/libs/basis/'+name, '.generated/public/decoders/basis/'+name);
+
+await build({ entryPoints: ['src/cameras.mjs'], outfile: '.generated/public/assets/cameras.js', bundle: true, minify: true, format: 'esm', target: 'es2022' });
+await copyFile('src/cameras.html', '.generated/public/cameras.html');
+await mkdir('.generated/public/cameras', {recursive:true});
+await copyFile('src/cameras.html', '.generated/public/cameras/index.html');
+await copyFile('src/cameras.css', '.generated/public/assets/cameras.css');
+console.log('Built .generated/public/');
+
+await build({entryPoints:['src/design.mjs'],outfile:'.generated/public/assets/design.js',bundle:true,minify:true,format:'esm',target:'es2022'});
+for(const name of ['design.html','test.html'])await copyFile('src/'+name,'.generated/public/'+name);
+await copyFile('src/design.css','.generated/public/assets/design.css');

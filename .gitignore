@@ -1,3 +1,17 @@
 node_modules/
 dist/
 .DS_Store
+
+.env*
+!.env.example
+.dev.vars*
+.sites-runtime/
+.wrangler/
+.vinext/
+.generated/
+.migration-starter/
+outputs/
+
+.next/
+*.tsbuildinfo
+next-env.d.ts
